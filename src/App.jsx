@@ -2290,6 +2290,7 @@ function StockScreen({ session, shop }) {
   const [cart, setCart] = useState([]);
   const [comment, setComment] = useState("");
   const [opDiscount, setOpDiscount] = useState(0);
+  const [roundAdjust, setRoundAdjust] = useState(0);
   const [postFlow, setPostFlow] = useState(null); // { type, step: "counterparty" | "payment" }
   const [flowCounterparty, setFlowCounterparty] = useState(null);
   const [notice, setNotice] = useState("");
@@ -2492,7 +2493,9 @@ function StockScreen({ session, shop }) {
       const netUnitPrice = r.qty > 0 ? Math.round((lineRaw - lineDiscount) / r.qty) : r.price;
       return { sku: r.sku, name: r.name, qty: r.qty, price: netUnitPrice };
     });
-    const sum = itemsPayload.reduce((s, it) => s + it.qty * it.price, 0);
+    const itemsSum = itemsPayload.reduce((s, it) => s + it.qty * it.price, 0);
+    const sum = itemsSum + (roundAdjust || 0);
+    const fullComment = roundAdjust ? [comment, `Округление: ${roundAdjust > 0 ? "+" : ""}${roundAdjust.toLocaleString("ru-RU")} ₸`].filter(Boolean).join(" · ") : comment;
     try {
       if (type === "Заказ покупателя") {
         await db("orders", {
@@ -2507,7 +2510,7 @@ function StockScreen({ session, shop }) {
             status: "Открыт",
             qty,
             sum,
-            comment,
+            comment: fullComment,
             items: itemsPayload,
           },
           session,
@@ -2528,7 +2531,7 @@ function StockScreen({ session, shop }) {
             payment_method: paymentMethod,
             qty,
             sum,
-            comment,
+            comment: fullComment,
             items: itemsPayload,
           },
           session,
@@ -2546,6 +2549,7 @@ function StockScreen({ session, shop }) {
       setCart([]);
       setComment("");
       setOpDiscount(0);
+      setRoundAdjust(0);
       setPostFlow(null);
       setFlowCounterparty(null);
       load();
@@ -2779,6 +2783,30 @@ function StockScreen({ session, shop }) {
                 onChange={(e) => setOpDiscount(Number(e.target.value) || 0)}
                 style={{ width: 56, padding: "5px 8px", borderRadius: 6, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12.5 }}
               />
+              <span style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginLeft: 6 }}>Округление, ₸</span>
+              <input
+                type="number"
+                value={roundAdjust}
+                onFocus={(e) => e.target.select()}
+                onChange={(e) => setRoundAdjust(Number(e.target.value) || 0)}
+                style={{ width: 70, padding: "5px 8px", borderRadius: 6, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12.5 }}
+              />
+              {cart.length > 0 && (
+                <button
+                  onClick={() => {
+                    const itemsNetTotal = cart.reduce((s, r) => {
+                      const lineRaw = r.qty * r.price;
+                      const lineDiscount = Math.round((lineRaw * (opDiscount || 0)) / 100);
+                      return s + (lineRaw - lineDiscount);
+                    }, 0);
+                    const rounded = Math.ceil(itemsNetTotal / 100) * 100;
+                    setRoundAdjust(rounded - itemsNetTotal);
+                  }}
+                  style={{ background: "transparent", border: `1px solid ${c.border}`, borderRadius: 6, padding: "6px 10px", fontFamily: bodyFont, fontWeight: 600, fontSize: 11.5, cursor: "pointer", color: c.ink }}
+                >
+                  До сотен
+                </button>
+              )}
               {cart.length > 0 && (
                 <button
                   onClick={() => setPrintPreviewOpen(true)}
@@ -2870,21 +2898,32 @@ function StockScreen({ session, shop }) {
                   </div>
                 );
               })}
-              {cart.length > 0 && (
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 20, padding: "8px 12px", borderTop: `1px solid ${c.border}`, background: c.cloud, fontFamily: bodyFont, fontSize: 12.5, fontWeight: 700 }}>
-                  <span>Итого</span>
-                  <span style={{ fontFamily: monoFont }}>
-                    {cart
-                      .reduce((s, r) => {
-                        const lineRaw = r.qty * r.price;
-                        const lineDiscount = Math.round((lineRaw * (opDiscount || 0)) / 100);
-                        return s + (lineRaw - lineDiscount);
-                      }, 0)
-                      .toLocaleString("ru-RU")}{" "}
-                    ₸
-                  </span>
-                </div>
-              )}
+              {cart.length > 0 &&
+                (() => {
+                  const itemsNetTotal = cart.reduce((s, r) => {
+                    const lineRaw = r.qty * r.price;
+                    const lineDiscount = Math.round((lineRaw * (opDiscount || 0)) / 100);
+                    return s + (lineRaw - lineDiscount);
+                  }, 0);
+                  const finalTotal = itemsNetTotal + (roundAdjust || 0);
+                  return (
+                    <>
+                      {roundAdjust !== 0 && (
+                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 20, padding: "6px 12px", borderTop: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12, color: c.steel }}>
+                          <span>Округление</span>
+                          <span style={{ fontFamily: monoFont, color: roundAdjust > 0 ? c.green : c.red }}>
+                            {roundAdjust > 0 ? "+" : ""}
+                            {roundAdjust.toLocaleString("ru-RU")} ₸
+                          </span>
+                        </div>
+                      )}
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 20, padding: "8px 12px", borderTop: `1px solid ${c.border}`, background: c.cloud, fontFamily: bodyFont, fontSize: 12.5, fontWeight: 700 }}>
+                        <span>Итого к оплате</span>
+                        <span style={{ fontFamily: monoFont }}>{finalTotal.toLocaleString("ru-RU")} ₸</span>
+                      </div>
+                    </>
+                  );
+                })()}
               {(() => {
                 const belowCost = cart.filter((r) => {
                   const stockItem = (items || []).find((s) => s.id === r.stock_id);
@@ -2993,7 +3032,7 @@ function StockScreen({ session, shop }) {
                   {(() => {
                     const rawTotal = cart.reduce((s, r) => s + r.qty * r.price, 0);
                     const discountTotal = Math.round((rawTotal * (opDiscount || 0)) / 100);
-                    const netTotal = rawTotal - discountTotal;
+                    const netTotal = rawTotal - discountTotal + (roundAdjust || 0);
                     return (
                       <>
                         {discountTotal > 0 && (
@@ -3003,6 +3042,17 @@ function StockScreen({ session, shop }) {
                             </td>
                             <td style={{ padding: "7px 10px", border: `1px solid ${c.border}`, textAlign: "right", fontFamily: monoFont, color: c.red }}>
                               −{discountTotal.toLocaleString("ru-RU")} ₸
+                            </td>
+                          </tr>
+                        )}
+                        {roundAdjust !== 0 && (
+                          <tr>
+                            <td colSpan={5} style={{ padding: "7px 10px", border: `1px solid ${c.border}`, color: c.steel }}>
+                              Округление
+                            </td>
+                            <td style={{ padding: "7px 10px", border: `1px solid ${c.border}`, textAlign: "right", fontFamily: monoFont, color: roundAdjust > 0 ? c.green : c.red }}>
+                              {roundAdjust > 0 ? "+" : ""}
+                              {roundAdjust.toLocaleString("ru-RU")} ₸
                             </td>
                           </tr>
                         )}
@@ -3021,7 +3071,7 @@ function StockScreen({ session, shop }) {
                   onClick={() => {
                     const rawTotal = cart.reduce((s, r) => s + r.qty * r.price, 0);
                     const discountTotal = Math.round((rawTotal * (opDiscount || 0)) / 100);
-                    const netTotal = rawTotal - discountTotal;
+                    const netTotal = rawTotal - discountTotal + (roundAdjust || 0);
                     printDocument(
                       "Предварительный список",
                       `
@@ -3050,6 +3100,7 @@ function StockScreen({ session, shop }) {
   </tbody>
   <tfoot>
     ${discountTotal > 0 ? `<tr><td colspan="5">Скидка ${opDiscount}%</td><td class="right mono">−${discountTotal.toLocaleString("ru-RU")} ₸</td></tr>` : ""}
+    ${roundAdjust ? `<tr><td colspan="5">Округление</td><td class="right mono">${roundAdjust > 0 ? "+" : ""}${roundAdjust.toLocaleString("ru-RU")} ₸</td></tr>` : ""}
     <tr><td colspan="5">Итого к оплате</td><td class="right mono">${netTotal.toLocaleString("ru-RU")} ₸</td></tr>
   </tfoot>
 </table>
