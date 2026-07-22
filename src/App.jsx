@@ -461,6 +461,431 @@ function PaymentMethodModal({ onSelect, onClose, counterpartyKind }) {
 // ---- Network search: real cross-shop stock via the `network_stock` view ----
 // ---- Shop profile: name, phone, address (shown to network when contacted) ----
 // ---- Contacts: list + create/edit against real `counterparties` table ----
+// ---- Orders: queue of pending purchases, real `orders` table ----
+function OrdersScreen({ session, shop }) {
+  const [view, setView] = useState("list"); // "list" | "new" | order id
+  const [list, setList] = useState(null);
+  const [error, setError] = useState("");
+
+  // ---- new order builder ----
+  const [stockItems, setStockItems] = useState(null);
+  const [query, setQuery] = useState("");
+  const [cart, setCart] = useState([]);
+  const [comment, setComment] = useState("");
+  const [counterpartyModalOpen, setCounterpartyModalOpen] = useState(false);
+
+  // ---- existing order detail ----
+  const [editing, setEditing] = useState(false);
+  const [editItems, setEditItems] = useState([]);
+  const [editComment, setEditComment] = useState("");
+  const [addItemQuery, setAddItemQuery] = useState("");
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  async function loadList() {
+    setError("");
+    try {
+      const rows = await db("orders", { query: `?shop_id=eq.${shop.id}&order=date.desc,created_at.desc`, session });
+      setList(rows);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  async function loadStock() {
+    try {
+      const rows = await db("stock", { query: `?shop_id=eq.${shop.id}&order=name.asc`, session });
+      setStockItems(rows);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  useEffect(() => {
+    loadList();
+    // eslint-disable-next-line
+  }, [shop.id]);
+
+  function startNew() {
+    setCart([]);
+    setComment("");
+    setQuery("");
+    if (!stockItems) loadStock();
+    setView("new");
+  }
+  function addToCart(item) {
+    setCart((prev) => {
+      const existing = prev.find((r) => r.stock_id === item.id);
+      if (existing) return prev.map((r) => (r.stock_id === item.id ? { ...r, qty: r.qty + 1 } : r));
+      return [...prev, { stock_id: item.id, sku: item.sku, name: item.name, qty: 1, price: item.price }];
+    });
+  }
+  function removeFromCart(stock_id) {
+    setCart((prev) => prev.filter((r) => r.stock_id !== stock_id));
+  }
+  async function createOrder(counterparty) {
+    const qty = cart.reduce((s, r) => s + r.qty, 0);
+    const sum = cart.reduce((s, r) => s + r.qty * r.price, 0);
+    try {
+      await db("orders", {
+        method: "POST",
+        body: {
+          shop_id: shop.id,
+          doc_number: genDocNumber("O"),
+          date: new Date().toISOString().slice(0, 10),
+          counterparty_id: counterparty.id,
+          counterparty_name: counterparty.name,
+          counterparty_kind: counterparty.kind,
+          status: "Открыт",
+          qty,
+          sum,
+          comment,
+          items: cart.map((r) => ({ sku: r.sku, name: r.name, qty: r.qty, price: r.price })),
+        },
+        session,
+        prefer: "return=minimal",
+      });
+      setCounterpartyModalOpen(false);
+      setView("list");
+      loadList();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  const order = typeof view === "string" && view !== "list" && view !== "new" ? (list || []).find((o) => o.id === view) : null;
+
+  function openOrder(o) {
+    setEditing(false);
+    setView(o.id);
+  }
+  function startEdit() {
+    setEditItems(order.items.map((it) => ({ ...it })));
+    setEditComment(order.comment || "");
+    setAddItemQuery("");
+    if (!stockItems) loadStock();
+    setEditing(true);
+  }
+  async function saveEdit() {
+    const qty = editItems.reduce((s, it) => s + it.qty, 0);
+    const sum = editItems.reduce((s, it) => s + it.qty * it.price, 0);
+    try {
+      await db("orders", { method: "PATCH", query: `?id=eq.${order.id}`, body: { items: editItems, qty, sum, comment: editComment }, session, prefer: "return=minimal" });
+      setEditing(false);
+      loadList();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  async function finalizeSale(method) {
+    try {
+      await db("sales_log", {
+        method: "POST",
+        body: {
+          shop_id: shop.id,
+          doc_number: genDocNumber("S"),
+          type: "Продажа",
+          date: new Date().toISOString().slice(0, 10),
+          counterparty_id: order.counterparty_id,
+          counterparty_name: order.counterparty_name,
+          counterparty_kind: order.counterparty_kind,
+          payment_method: method,
+          qty: order.qty,
+          sum: order.sum,
+          comment: order.comment,
+          items: order.items,
+        },
+        session,
+        prefer: "return=minimal",
+      });
+      for (const it of order.items) {
+        const stockRow = (stockItems || []).find((s) => s.sku === it.sku);
+        if (stockRow) {
+          const newQty = Math.max(0, stockRow.qty - it.qty);
+          await db("stock", { method: "PATCH", query: `?id=eq.${stockRow.id}`, body: { qty: newQty }, session, prefer: "return=minimal" });
+        }
+      }
+      await db("orders", { method: "DELETE", query: `?id=eq.${order.id}`, session, prefer: "return=minimal" });
+      setPaymentOpen(false);
+      setView("list");
+      loadList();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  async function deleteOrder() {
+    try {
+      await db("orders", { method: "DELETE", query: `?id=eq.${order.id}`, session, prefer: "return=minimal" });
+      setConfirmDelete(false);
+      setView("list");
+      loadList();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  const filteredStock = (stockItems || []).filter((s) => !query.trim() || s.sku.toLowerCase().includes(query.toLowerCase()) || s.name.toLowerCase().includes(query.toLowerCase()));
+  const cartSum = cart.reduce((s, r) => s + r.qty * r.price, 0);
+  const filteredAddStock = (stockItems || []).filter((s) => addItemQuery.trim() && (s.sku.toLowerCase().includes(addItemQuery.toLowerCase()) || s.name.toLowerCase().includes(addItemQuery.toLowerCase())));
+
+  // ---- Order detail view ----
+  if (order) {
+    return (
+      <div>
+        <button onClick={() => setView("list")} style={{ background: "none", border: "none", color: c.steel, fontFamily: bodyFont, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: 12 }}>
+          ← К списку заказов
+        </button>
+
+        {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
+
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
+          <div style={{ padding: "14px 18px", borderBottom: `1px solid ${c.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style={{ fontFamily: displayFont, fontSize: 16, fontWeight: 600, color: c.ink }}>{order.doc_number} · {order.counterparty_name}</div>
+              <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginTop: 2 }}>
+                от {order.date} · статус: <span style={{ fontWeight: 700, color: c.amberDark }}>{order.status}</span>
+              </div>
+            </div>
+            {!editing && (
+              <button onClick={startEdit} style={{ background: "transparent", border: `1px solid ${c.border}`, borderRadius: 8, padding: "7px 12px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12, cursor: "pointer", color: c.ink }}>
+                ✎ Редактировать
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+            <span style={{ width: 130 }}>Артикул</span>
+            <span style={{ flex: 1 }}>Наименование</span>
+            <span style={{ width: 60, textAlign: "right" }}>Кол.</span>
+            <span style={{ width: 90, textAlign: "right" }}>Цена</span>
+            <span style={{ width: 100, textAlign: "right" }}>Сумма</span>
+            {editing && <span style={{ width: 20 }} />}
+          </div>
+          {(editing ? editItems : order.items).map((it, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
+              <span style={{ width: 130, fontFamily: monoFont, color: c.steel }}>{it.sku}</span>
+              <span style={{ flex: 1, color: c.ink }}>{it.name}</span>
+              {editing ? (
+                <input
+                  type="number"
+                  value={it.qty}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => setEditItems((prev) => prev.map((p, pi) => (pi === i ? { ...p, qty: Math.max(1, Number(e.target.value) || 1) } : p)))}
+                  style={{ width: 50, textAlign: "right", padding: "3px 6px", borderRadius: 5, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12 }}
+                />
+              ) : (
+                <span style={{ width: 60, textAlign: "right", fontFamily: monoFont }}>{it.qty}</span>
+              )}
+              {editing ? (
+                <input
+                  type="number"
+                  value={it.price}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => setEditItems((prev) => prev.map((p, pi) => (pi === i ? { ...p, price: Math.max(0, Number(e.target.value) || 0) } : p)))}
+                  style={{ width: 80, textAlign: "right", padding: "3px 6px", borderRadius: 5, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12 }}
+                />
+              ) : (
+                <span style={{ width: 90, textAlign: "right", fontFamily: monoFont }}>{it.price.toLocaleString("ru-RU")}</span>
+              )}
+              <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontWeight: 600 }}>{(it.qty * it.price).toLocaleString("ru-RU")}</span>
+              {editing && (
+                <button onClick={() => setEditItems((prev) => prev.filter((_, pi) => pi !== i))} style={{ width: 20, background: "none", border: "none", color: c.steelLight, cursor: "pointer" }}>
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
+
+          {editing && (
+            <div style={{ padding: "10px 14px", borderTop: `1px solid ${c.border}`, background: c.cloud }}>
+              <input value={addItemQuery} onChange={(e) => setAddItemQuery(e.target.value)} placeholder="Добавить позицию — артикул или название" style={{ ...inputStyle, marginBottom: addItemQuery.trim() ? 6 : 0 }} />
+              {addItemQuery.trim() && (
+                <div style={{ background: "#fff", border: `1px solid ${c.border}`, borderRadius: 8, maxHeight: 160, overflowY: "auto" }}>
+                  {filteredAddStock.map((s, i) => (
+                    <div
+                      key={s.id}
+                      onClick={() => {
+                        setEditItems((prev) => {
+                          const existing = prev.find((p) => p.sku === s.sku);
+                          if (existing) return prev.map((p) => (p.sku === s.sku ? { ...p, qty: p.qty + 1 } : p));
+                          return [...prev, { sku: s.sku, name: s.name, qty: 1, price: s.price }];
+                        });
+                        setAddItemQuery("");
+                      }}
+                      style={{ display: "flex", gap: 8, padding: "7px 10px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, cursor: "pointer", fontFamily: bodyFont, fontSize: 12.5 }}
+                    >
+                      <span style={{ fontFamily: monoFont, color: c.steel, width: 110 }}>{s.sku}</span>
+                      <span style={{ flex: 1 }}>{s.name}</span>
+                    </div>
+                  ))}
+                  {filteredAddStock.length === 0 && <div style={{ padding: 10, color: c.steel, fontSize: 12 }}>Ничего не найдено.</div>}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div style={{ display: "flex", padding: "8px 14px", borderTop: `1px solid ${c.border}`, background: c.cloud }}>
+            <span style={{ flex: 1, fontWeight: 600, fontSize: 12.5 }}>Итого</span>
+            <span style={{ fontFamily: monoFont, fontWeight: 700 }}>
+              {(editing ? editItems.reduce((s, it) => s + it.qty * it.price, 0) : order.sum).toLocaleString("ru-RU")}
+            </span>
+          </div>
+
+          {editing ? (
+            <div style={{ padding: "10px 14px", borderTop: `1px solid ${c.border}` }}>
+              <label style={fieldLabel}>Комментарий</label>
+              <input value={editComment} onChange={(e) => setEditComment(e.target.value)} style={inputStyle} />
+            </div>
+          ) : (
+            order.comment && <div style={{ padding: "10px 14px", borderTop: `1px solid ${c.border}`, color: c.steel, fontSize: 12.5 }}>Комментарий: {order.comment}</div>
+          )}
+
+          {editing ? (
+            <div style={{ display: "flex", gap: 8, padding: 14, borderTop: `1px solid ${c.border}` }}>
+              <button onClick={saveEdit} style={primaryBtn}>Сохранить изменения</button>
+              <button onClick={() => setEditing(false)} style={{ background: "transparent", border: `1px solid ${c.border}`, borderRadius: 8, padding: "10px 16px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, cursor: "pointer", color: c.ink }}>
+                Отмена
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 14, borderTop: `1px solid ${c.border}`, flexWrap: "wrap" }}>
+              <button onClick={() => setPaymentOpen(true)} style={primaryBtn}>Провести продажу</button>
+              <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                {confirmDelete ? (
+                  <>
+                    <span style={{ color: c.red, fontSize: 12.5, alignSelf: "center" }}>Удалить безвозвратно?</span>
+                    <button onClick={deleteOrder} style={{ background: c.red, color: "#fff", border: "none", borderRadius: 8, padding: "9px 14px", fontFamily: bodyFont, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>Да, удалить</button>
+                    <button onClick={() => setConfirmDelete(false)} style={{ background: "transparent", border: `1px solid ${c.border}`, borderRadius: 8, padding: "9px 14px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, cursor: "pointer", color: c.ink }}>Отмена</button>
+                  </>
+                ) : (
+                  <button onClick={() => setConfirmDelete(true)} style={{ background: "transparent", color: c.red, border: `1px solid ${c.redBg}`, borderRadius: 8, padding: "9px 16px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, cursor: "pointer" }}>
+                    Удалить заказ
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {paymentOpen && <PaymentMethodModal onSelect={finalizeSale} onClose={() => setPaymentOpen(false)} counterpartyKind={order.counterparty_kind} />}
+      </div>
+    );
+  }
+
+  // ---- New order builder ----
+  if (view === "new") {
+    return (
+      <div>
+        <button onClick={() => setView("list")} style={{ background: "none", border: "none", color: c.steel, fontFamily: bodyFont, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: 12 }}>
+          ← К списку заказов
+        </button>
+        <div style={{ fontFamily: displayFont, fontSize: 20, fontWeight: 600, color: c.ink, marginBottom: 14 }}>Новый заказ</div>
+
+        {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
+
+        <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+          <div style={{ flex: "1 1 55%", minWidth: 0 }}>
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск по артикулу или названию…" style={{ ...inputStyle, marginBottom: 10 }} />
+            <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden", maxHeight: 420, overflowY: "auto" }}>
+              {stockItems === null && (
+                <div style={{ display: "flex", gap: 8, padding: 18, color: c.steel, fontSize: 13 }}>
+                  <Spinner /> Загружаю склад…
+                </div>
+              )}
+              {filteredStock.map((s, i) => (
+                <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
+                  <span style={{ width: 110, fontFamily: monoFont, fontWeight: 600, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.sku}</span>
+                  <span style={{ flex: 1, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
+                  <span style={{ width: 80, textAlign: "right", fontFamily: monoFont, fontWeight: 700, color: c.amberDark }}>{s.price.toLocaleString("ru-RU")}</span>
+                  <button onClick={() => addToCart(s)} style={{ width: 24, height: 24, borderRadius: 6, border: "none", background: c.amber, color: c.ink, cursor: "pointer", flexShrink: 0 }}>+</button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ flex: "1 1 45%", minWidth: 0, background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 16 }}>
+            <div style={{ fontFamily: displayFont, fontSize: 14.5, fontWeight: 600, color: c.ink, marginBottom: 10 }}>Состав заказа</div>
+            {cart.length === 0 && <div style={{ color: c.steel, fontSize: 12.5, marginBottom: 14 }}>Добавьте товары слева, кнопкой «+».</div>}
+            {cart.map((r) => (
+              <div key={r.stock_id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: `1px solid ${c.border}`, fontSize: 12.5 }}>
+                <span style={{ flex: 1, color: c.ink }}>{r.name}</span>
+                <input
+                  type="number"
+                  value={r.qty}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => setCart((prev) => prev.map((p) => (p.stock_id === r.stock_id ? { ...p, qty: Math.max(1, Number(e.target.value) || 1) } : p)))}
+                  style={{ width: 44, textAlign: "right", padding: "3px 6px", borderRadius: 5, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12 }}
+                />
+                <span style={{ width: 70, textAlign: "right", fontFamily: monoFont }}>{(r.qty * r.price).toLocaleString("ru-RU")}</span>
+                <button onClick={() => removeFromCart(r.stock_id)} style={{ background: "none", border: "none", color: c.steelLight, cursor: "pointer" }}>✕</button>
+              </div>
+            ))}
+            {cart.length > 0 && (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", fontWeight: 700, fontSize: 13 }}>
+                  <span>Итого</span>
+                  <span style={{ fontFamily: monoFont }}>{cartSum.toLocaleString("ru-RU")} ₸</span>
+                </div>
+                <input placeholder="Комментарий (необязательно)" value={comment} onChange={(e) => setComment(e.target.value)} style={{ ...inputStyle, marginBottom: 12 }} />
+                <button onClick={() => setCounterpartyModalOpen(true)} style={{ ...primaryBtn, width: "100%" }}>Оформить заказ</button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {counterpartyModalOpen && <CounterpartyModal session={session} shop={shop} onSelect={createOrder} onClose={() => setCounterpartyModalOpen(false)} />}
+      </div>
+    );
+  }
+
+  // ---- List view ----
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ fontFamily: displayFont, fontSize: 20, fontWeight: 600, color: c.ink }}>Заказы</div>
+        <button onClick={startNew} style={primaryBtn}>
+          <Icon size={15}>+</Icon> Новый заказ
+        </button>
+      </div>
+
+      {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
+
+      {list === null && (
+        <div style={{ display: "flex", gap: 8, color: c.steel, fontSize: 13, padding: 12 }}>
+          <Spinner /> Загружаю…
+        </div>
+      )}
+      {list && list.length === 0 && (
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 24, textAlign: "center", color: c.steel, fontSize: 13.5 }}>
+          Заказов пока нет — нажмите «Новый заказ».
+        </div>
+      )}
+      {list && list.length > 0 && (
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
+          <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+            <span style={{ width: 100 }}>№</span>
+            <span style={{ width: 90 }}>Дата</span>
+            <span style={{ flex: 1 }}>Контрагент</span>
+            <span style={{ width: 50, textAlign: "right" }}>Кол.</span>
+            <span style={{ width: 100, textAlign: "right" }}>Сумма</span>
+            <span style={{ width: 90 }}>Статус</span>
+          </div>
+          {list.map((o, i) => (
+            <div key={o.id} onClick={() => openOrder(o)} style={{ display: "flex", gap: 8, padding: "10px 14px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 13, cursor: "pointer" }}>
+              <span style={{ width: 100, fontFamily: monoFont, fontWeight: 600 }}>{o.doc_number}</span>
+              <span style={{ width: 90, fontFamily: monoFont, color: c.steel }}>{o.date}</span>
+              <span style={{ flex: 1, color: c.ink }}>{o.counterparty_name}</span>
+              <span style={{ width: 50, textAlign: "right", fontFamily: monoFont }}>{o.qty}</span>
+              <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontWeight: 700 }}>{o.sum.toLocaleString("ru-RU")}</span>
+              <span style={{ width: 90 }}>
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: c.amberDark, background: "#FDF3E2", padding: "2px 8px", borderRadius: 4 }}>{o.status}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ContactsScreen({ session, shop }) {
   const emptyForm = { kind: "Физлицо", category: "", name: "", full_name: "", phone1: "", phone2: "", phone3: "", email: "", bin: "", address: "", legal_address: "", actual_address: "", comment: "" };
   const [list, setList] = useState(null);
@@ -1532,13 +1957,19 @@ export default function App() {
           <Icon size={17}>👥</Icon> Контрагенты
         </div>
         <div
+          onClick={() => setTab("orders")}
+          style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "orders" ? c.amber : "transparent", color: tab === "orders" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
+        >
+          <Icon size={17}>🛒</Icon> Заказы
+        </div>
+        <div
           onClick={() => setTab("settings")}
           style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "settings" ? c.amber : "transparent", color: tab === "settings" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
         >
           <Icon size={17}>⚙️</Icon> Настройки
         </div>
         <div style={{ marginTop: "auto", padding: "10px 14px", fontSize: 11, color: c.steelLight, fontFamily: bodyFont }}>
-          Остальные разделы (заказы, документы, отчёты) подключим следующими.
+          Остальные разделы (документы, отчёты) подключим следующими.
         </div>
         <button
           onClick={() => {
@@ -1556,6 +1987,7 @@ export default function App() {
         {tab === "sales" && <SalesScreen session={session} shop={shop} />}
         {tab === "network" && <NetworkSearchScreen session={session} shop={shop} onShopUpdate={setShop} />}
         {tab === "contacts" && <ContactsScreen session={session} shop={shop} />}
+        {tab === "orders" && <OrdersScreen session={session} shop={shop} />}
         {tab === "settings" && <SettingsScreen session={session} shop={shop} onShopUpdate={setShop} />}
       </main>
     </div>
