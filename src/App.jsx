@@ -1777,8 +1777,9 @@ function SalesLogPanel({ salesLog, shop }) {
               @media print {
                 body * { visibility: hidden; }
                 #print-area-doc, #print-area-doc * { visibility: visible; }
-                #print-area-doc { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 24px; box-shadow: none; border: none; }
+                #print-area-doc { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; box-shadow: none; border: none; }
                 .no-print { display: none !important; }
+                @page { size: A4; margin: 14mm; }
               }
             `}</style>
             <div onClick={(e) => e.stopPropagation()} style={{ background: c.panel, borderRadius: 12, width: 520, maxHeight: "85vh", overflowY: "auto" }}>
@@ -1805,28 +1806,41 @@ function SalesLogPanel({ salesLog, shop }) {
                   </div>
                 </div>
 
-                <div style={{ border: `1px solid ${c.border}`, borderRadius: 8, overflow: "hidden", marginBottom: 16 }}>
-                  <div style={{ display: "flex", gap: 8, padding: "8px 10px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 700 }}>
-                    <span style={{ width: 100 }}>Артикул</span>
-                    <span style={{ flex: 1 }}>Наименование</span>
-                    <span style={{ width: 40, textAlign: "right" }}>Кол.</span>
-                    <span style={{ width: 80, textAlign: "right" }}>Цена</span>
-                    <span style={{ width: 90, textAlign: "right" }}>Сумма</span>
-                  </div>
-                  {(opened.items || []).map((it, i) => (
-                    <div key={i} style={{ display: "flex", gap: 8, padding: "8px 10px", borderTop: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
-                      <span style={{ width: 100, fontFamily: monoFont, color: c.steel }}>{it.sku}</span>
-                      <span style={{ flex: 1 }}>{it.name}</span>
-                      <span style={{ width: 40, textAlign: "right", fontFamily: monoFont }}>{it.qty}</span>
-                      <span style={{ width: 80, textAlign: "right", fontFamily: monoFont }}>{it.price.toLocaleString("ru-RU")}</span>
-                      <span style={{ width: 90, textAlign: "right", fontFamily: monoFont, fontWeight: 700 }}>{(it.qty * it.price).toLocaleString("ru-RU")}</span>
-                    </div>
-                  ))}
-                  <div style={{ display: "flex", padding: "10px 10px", borderTop: `1px solid ${c.border}`, background: c.cloud, fontWeight: 700, fontSize: 14 }}>
-                    <span style={{ flex: 1 }}>Итого</span>
-                    <span style={{ fontFamily: monoFont }}>{opened.sum.toLocaleString("ru-RU")} ₸</span>
-                  </div>
-                </div>
+                <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", marginBottom: 16, fontFamily: bodyFont, fontSize: 12.5 }}>
+                  <colgroup>
+                    <col style={{ width: "22%" }} />
+                    <col />
+                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "16%" }} />
+                    <col style={{ width: "18%" }} />
+                  </colgroup>
+                  <thead>
+                    <tr style={{ background: c.cloud, color: c.steel, fontSize: 11, fontWeight: 700 }}>
+                      <th style={{ textAlign: "left", padding: "8px 10px", border: `1px solid ${c.border}` }}>Артикул</th>
+                      <th style={{ textAlign: "left", padding: "8px 10px", border: `1px solid ${c.border}` }}>Наименование</th>
+                      <th style={{ textAlign: "right", padding: "8px 10px", border: `1px solid ${c.border}` }}>Кол.</th>
+                      <th style={{ textAlign: "right", padding: "8px 10px", border: `1px solid ${c.border}` }}>Цена</th>
+                      <th style={{ textAlign: "right", padding: "8px 10px", border: `1px solid ${c.border}` }}>Сумма</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(opened.items || []).map((it, i) => (
+                      <tr key={i}>
+                        <td style={{ padding: "7px 10px", border: `1px solid ${c.border}`, fontFamily: monoFont, color: c.steel, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.sku}</td>
+                        <td style={{ padding: "7px 10px", border: `1px solid ${c.border}`, overflow: "hidden", textOverflow: "ellipsis" }}>{it.name}</td>
+                        <td style={{ padding: "7px 10px", border: `1px solid ${c.border}`, textAlign: "right", fontFamily: monoFont }}>{it.qty}</td>
+                        <td style={{ padding: "7px 10px", border: `1px solid ${c.border}`, textAlign: "right", fontFamily: monoFont }}>{it.price.toLocaleString("ru-RU")}</td>
+                        <td style={{ padding: "7px 10px", border: `1px solid ${c.border}`, textAlign: "right", fontFamily: monoFont, fontWeight: 700 }}>{(it.qty * it.price).toLocaleString("ru-RU")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ background: c.cloud, fontWeight: 700, fontSize: 14 }}>
+                      <td colSpan={4} style={{ padding: "10px", border: `1px solid ${c.border}` }}>Итого</td>
+                      <td style={{ padding: "10px", border: `1px solid ${c.border}`, textAlign: "right", fontFamily: monoFont }}>{opened.sum.toLocaleString("ru-RU")} ₸</td>
+                    </tr>
+                  </tfoot>
+                </table>
 
                 <div className="no-print">
                   <button onClick={() => window.print()} style={{ ...primaryBtn, width: "100%" }}>
@@ -2076,6 +2090,17 @@ function StockScreen({ session, shop }) {
   const [notice, setNotice] = useState("");
   const [opError, setOpError] = useState("");
   const [salesLog, setSalesLog] = useState(null);
+
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(""), 4000);
+    return () => clearTimeout(t);
+  }, [notice]);
+  useEffect(() => {
+    if (!opError) return;
+    const t = setTimeout(() => setOpError(""), 6000);
+    return () => clearTimeout(t);
+  }, [opError]);
 
   async function load() {
     setError("");
@@ -2487,32 +2512,33 @@ function StockScreen({ session, shop }) {
         ))}
       </div>
 
-      {/* ---- Operation panel: Новая операция / Журнал продаж / Загрузка из Excel ---- */}
-      <div style={{ display: "flex", gap: 8, margin: "20px 0 14px" }}>
+      {/* ---- Operation panel: Новая операция / Журнал продаж ---- */}
+      <div style={{ display: "flex", gap: 0, margin: "20px 0 0", borderBottom: `1px solid ${c.border}` }}>
         {[
           { key: "new", label: "Новая операция" },
           { key: "log", label: "Журнал продаж" },
-          { key: "excel", label: "Загрузка из Excel" },
         ].map((t) => (
           <button
             key={t.key}
             onClick={() => setOpTab(t.key)}
             style={{
-              padding: "8px 14px",
-              borderRadius: 8,
-              border: `1px solid ${opTab === t.key ? c.amberDark : c.border}`,
-              background: opTab === t.key ? "#FDF3E2" : "#fff",
+              padding: "10px 18px",
+              border: "none",
+              borderBottom: `2px solid ${opTab === t.key ? c.amber : "transparent"}`,
+              background: "transparent",
               fontFamily: bodyFont,
               fontWeight: 600,
-              fontSize: 12.5,
+              fontSize: 13,
               cursor: "pointer",
-              color: c.ink,
+              color: opTab === t.key ? c.ink : c.steel,
+              marginBottom: -1,
             }}
           >
             {t.label}
           </button>
         ))}
       </div>
+      <div style={{ marginBottom: 14 }} />
 
       {opError && (
         <div style={{ display: "flex", gap: 8, background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>
@@ -2679,8 +2705,9 @@ function StockScreen({ session, shop }) {
             @media print {
               body * { visibility: hidden; }
               #print-area-op, #print-area-op * { visibility: visible; }
-              #print-area-op { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 24px; box-shadow: none; border: none; }
+              #print-area-op { position: absolute; left: 0; top: 0; width: 100%; margin: 0; box-shadow: none; border: none; }
               .no-print { display: none !important; }
+              @page { size: A4; margin: 14mm; }
             }
           `}</style>
           <div onClick={(e) => e.stopPropagation()} style={{ background: c.panel, borderRadius: 12, width: 520, maxHeight: "85vh", overflowY: "auto" }}>
@@ -2708,52 +2735,70 @@ function StockScreen({ session, shop }) {
                 </div>
               </div>
 
-              <div style={{ border: `1px solid ${c.border}`, borderRadius: 8, overflow: "hidden", marginBottom: 16 }}>
-                <div style={{ display: "flex", gap: 8, padding: "8px 10px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 700 }}>
-                  <span style={{ width: 90 }}>Артикул</span>
-                  <span style={{ flex: 1 }}>Наименование</span>
-                  <span style={{ width: 36, textAlign: "right" }}>Кол.</span>
-                  <span style={{ width: 70, textAlign: "right" }}>Цена</span>
-                  <span style={{ width: 65, textAlign: "right" }}>Скидка</span>
-                  <span style={{ width: 85, textAlign: "right" }}>Сумма</span>
-                </div>
-                {cart.map((r, i) => {
-                  const lineRaw = r.qty * r.price;
-                  const lineDiscount = Math.round((lineRaw * (opDiscount || 0)) / 100);
-                  const lineNet = lineRaw - lineDiscount;
-                  return (
-                    <div key={i} style={{ display: "flex", gap: 8, padding: "8px 10px", borderTop: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
-                      <span style={{ width: 90, fontFamily: monoFont, color: c.steel }}>{r.sku}</span>
-                      <span style={{ flex: 1 }}>{r.name}</span>
-                      <span style={{ width: 36, textAlign: "right", fontFamily: monoFont }}>{r.qty}</span>
-                      <span style={{ width: 70, textAlign: "right", fontFamily: monoFont }}>{r.price.toLocaleString("ru-RU")}</span>
-                      <span style={{ width: 65, textAlign: "right", fontFamily: monoFont, color: lineDiscount > 0 ? c.red : c.steelLight }}>
-                        {lineDiscount > 0 ? `−${lineDiscount.toLocaleString("ru-RU")}` : "—"}
-                      </span>
-                      <span style={{ width: 85, textAlign: "right", fontFamily: monoFont, fontWeight: 700 }}>{lineNet.toLocaleString("ru-RU")}</span>
-                    </div>
-                  );
-                })}
-                {(() => {
-                  const rawTotal = cart.reduce((s, r) => s + r.qty * r.price, 0);
-                  const discountTotal = Math.round((rawTotal * (opDiscount || 0)) / 100);
-                  const netTotal = rawTotal - discountTotal;
-                  return (
-                    <>
-                      {discountTotal > 0 && (
-                        <div style={{ display: "flex", padding: "6px 10px", borderTop: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12, color: c.steel }}>
-                          <span style={{ flex: 1 }}>Скидка {opDiscount}%</span>
-                          <span style={{ fontFamily: monoFont, color: c.red }}>−{discountTotal.toLocaleString("ru-RU")} ₸</span>
-                        </div>
-                      )}
-                      <div style={{ display: "flex", padding: "10px 10px", borderTop: `1px solid ${c.border}`, background: c.cloud, fontWeight: 700, fontSize: 14 }}>
-                        <span style={{ flex: 1 }}>Итого к оплате</span>
-                        <span style={{ fontFamily: monoFont }}>{netTotal.toLocaleString("ru-RU")} ₸</span>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
+              <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", marginBottom: 16, fontFamily: bodyFont, fontSize: 12.5 }}>
+                <colgroup>
+                  <col style={{ width: "18%" }} />
+                  <col />
+                  <col style={{ width: "10%" }} />
+                  <col style={{ width: "14%" }} />
+                  <col style={{ width: "14%" }} />
+                  <col style={{ width: "16%" }} />
+                </colgroup>
+                <thead>
+                  <tr style={{ background: c.cloud, color: c.steel, fontSize: 11, fontWeight: 700 }}>
+                    <th style={{ textAlign: "left", padding: "8px 10px", border: `1px solid ${c.border}` }}>Артикул</th>
+                    <th style={{ textAlign: "left", padding: "8px 10px", border: `1px solid ${c.border}` }}>Наименование</th>
+                    <th style={{ textAlign: "right", padding: "8px 10px", border: `1px solid ${c.border}` }}>Кол.</th>
+                    <th style={{ textAlign: "right", padding: "8px 10px", border: `1px solid ${c.border}` }}>Цена</th>
+                    <th style={{ textAlign: "right", padding: "8px 10px", border: `1px solid ${c.border}` }}>Скидка</th>
+                    <th style={{ textAlign: "right", padding: "8px 10px", border: `1px solid ${c.border}` }}>Сумма</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cart.map((r, i) => {
+                    const lineRaw = r.qty * r.price;
+                    const lineDiscount = Math.round((lineRaw * (opDiscount || 0)) / 100);
+                    const lineNet = lineRaw - lineDiscount;
+                    return (
+                      <tr key={i}>
+                        <td style={{ padding: "7px 10px", border: `1px solid ${c.border}`, fontFamily: monoFont, color: c.steel, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.sku}</td>
+                        <td style={{ padding: "7px 10px", border: `1px solid ${c.border}` }}>{r.name}</td>
+                        <td style={{ padding: "7px 10px", border: `1px solid ${c.border}`, textAlign: "right", fontFamily: monoFont }}>{r.qty}</td>
+                        <td style={{ padding: "7px 10px", border: `1px solid ${c.border}`, textAlign: "right", fontFamily: monoFont }}>{r.price.toLocaleString("ru-RU")}</td>
+                        <td style={{ padding: "7px 10px", border: `1px solid ${c.border}`, textAlign: "right", fontFamily: monoFont, color: lineDiscount > 0 ? c.red : c.steelLight }}>
+                          {lineDiscount > 0 ? `−${lineDiscount.toLocaleString("ru-RU")}` : "—"}
+                        </td>
+                        <td style={{ padding: "7px 10px", border: `1px solid ${c.border}`, textAlign: "right", fontFamily: monoFont, fontWeight: 700 }}>{lineNet.toLocaleString("ru-RU")}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  {(() => {
+                    const rawTotal = cart.reduce((s, r) => s + r.qty * r.price, 0);
+                    const discountTotal = Math.round((rawTotal * (opDiscount || 0)) / 100);
+                    const netTotal = rawTotal - discountTotal;
+                    return (
+                      <>
+                        {discountTotal > 0 && (
+                          <tr>
+                            <td colSpan={5} style={{ padding: "7px 10px", border: `1px solid ${c.border}`, color: c.steel }}>
+                              Скидка {opDiscount}%
+                            </td>
+                            <td style={{ padding: "7px 10px", border: `1px solid ${c.border}`, textAlign: "right", fontFamily: monoFont, color: c.red }}>
+                              −{discountTotal.toLocaleString("ru-RU")} ₸
+                            </td>
+                          </tr>
+                        )}
+                        <tr style={{ background: c.cloud, fontWeight: 700, fontSize: 14 }}>
+                          <td colSpan={5} style={{ padding: "10px", border: `1px solid ${c.border}` }}>Итого к оплате</td>
+                          <td style={{ padding: "10px", border: `1px solid ${c.border}`, textAlign: "right", fontFamily: monoFont }}>{netTotal.toLocaleString("ru-RU")} ₸</td>
+                        </tr>
+                      </>
+                    );
+                  })()}
+                </tfoot>
+              </table>
 
               <div className="no-print">
                 <button onClick={() => window.print()} style={{ ...primaryBtn, width: "100%" }}>
