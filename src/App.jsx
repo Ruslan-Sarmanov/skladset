@@ -460,6 +460,269 @@ function PaymentMethodModal({ onSelect, onClose, counterpartyKind }) {
 // ---- Sales screen: build an operation, post it, and browse the sales log ----
 // ---- Network search: real cross-shop stock via the `network_stock` view ----
 // ---- Shop profile: name, phone, address (shown to network when contacted) ----
+// ---- Contacts: list + create/edit against real `counterparties` table ----
+function ContactsScreen({ session, shop }) {
+  const emptyForm = { kind: "Физлицо", category: "", name: "", full_name: "", phone1: "", phone2: "", phone3: "", email: "", bin: "", address: "", legal_address: "", actual_address: "", comment: "" };
+  const [list, setList] = useState(null);
+  const [openId, setOpenId] = useState(null); // null | "new" | id
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function load() {
+    setError("");
+    try {
+      const rows = await db("counterparties", { query: `?shop_id=eq.${shop.id}&order=name.asc`, session });
+      setList(rows);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line
+  }, [shop.id]);
+
+  function openNew() {
+    setForm(emptyForm);
+    setOpenId("new");
+  }
+  function openDetail(cp) {
+    setForm({
+      kind: cp.kind || "Физлицо",
+      category: cp.category || "",
+      name: cp.name || "",
+      full_name: cp.full_name || "",
+      phone1: (cp.phones && cp.phones[0]) || "",
+      phone2: (cp.phones && cp.phones[1]) || "",
+      phone3: (cp.phones && cp.phones[2]) || "",
+      email: cp.email || "",
+      bin: cp.bin || "",
+      address: cp.address || "",
+      legal_address: cp.legal_address || "",
+      actual_address: cp.actual_address || "",
+      comment: cp.comment || "",
+    });
+    setOpenId(cp.id);
+  }
+
+  function bodyFromForm() {
+    return {
+      shop_id: shop.id,
+      kind: form.kind,
+      category: form.kind === "Юрлицо" ? form.category : "",
+      name: form.name,
+      full_name: form.kind === "Юрлицо" ? form.full_name : "",
+      phones: [form.phone1, form.phone2, form.phone3],
+      email: form.email,
+      bin: form.bin,
+      address: form.kind === "Физлицо" ? form.address : "",
+      legal_address: form.kind === "Юрлицо" ? form.legal_address : "",
+      actual_address: form.kind === "Юрлицо" ? form.actual_address : "",
+      comment: form.comment,
+    };
+  }
+
+  async function save() {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    setError("");
+    try {
+      if (openId === "new") {
+        await db("counterparties", { method: "POST", body: bodyFromForm(), session, prefer: "return=minimal" });
+      } else {
+        await db("counterparties", { method: "PATCH", query: `?id=eq.${openId}`, body: bodyFromForm(), session, prefer: "return=minimal" });
+      }
+      setOpenId(null);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function remove() {
+    setSaving(true);
+    try {
+      await db("counterparties", { method: "DELETE", query: `?id=eq.${openId}`, session, prefer: "return=minimal" });
+      setOpenId(null);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const pill = (active) => ({
+    flex: 1,
+    padding: "8px 10px",
+    borderRadius: 8,
+    border: `1px solid ${active ? c.amberDark : c.border}`,
+    background: active ? "#FDF3E2" : "#fff",
+    fontFamily: bodyFont,
+    fontWeight: 600,
+    fontSize: 12.5,
+    cursor: "pointer",
+    color: c.ink,
+  });
+
+  if (openId) {
+    return (
+      <div style={{ maxWidth: 560 }}>
+        <button onClick={() => setOpenId(null)} style={{ background: "none", border: "none", color: c.steel, fontFamily: bodyFont, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: 12 }}>
+          ← К списку контрагентов
+        </button>
+
+        {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
+
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 20 }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            {["Физлицо", "Юрлицо"].map((k) => (
+              <button key={k} onClick={() => setForm({ ...form, kind: k })} style={pill(form.kind === k)}>
+                {k}
+              </button>
+            ))}
+          </div>
+
+          {form.kind === "Юрлицо" && (
+            <div style={{ marginBottom: 12 }}>
+              <label style={fieldLabel}>Категория</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                {["ТОО", "АО", "ИП"].map((cat) => (
+                  <button key={cat} onClick={() => setForm({ ...form, category: cat })} style={{ ...pill(form.category === cat), flex: "0 0 70px" }}>
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={fieldLabel}>{form.kind === "Юрлицо" ? "Организация (короткое наименование)" : "ФИО"}</label>
+            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inputStyle} />
+          </div>
+
+          {form.kind === "Юрлицо" && (
+            <div style={{ marginBottom: 12 }}>
+              <label style={fieldLabel}>Полное наименование организации</label>
+              <input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} style={inputStyle} />
+            </div>
+          )}
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
+            <div>
+              <label style={fieldLabel}>Телефон 1</label>
+              <input value={form.phone1} onChange={(e) => setForm({ ...form, phone1: e.target.value })} style={inputStyle} />
+            </div>
+            <div>
+              <label style={fieldLabel}>Телефон 2</label>
+              <input value={form.phone2} onChange={(e) => setForm({ ...form, phone2: e.target.value })} style={inputStyle} />
+            </div>
+            <div>
+              <label style={fieldLabel}>Телефон 3</label>
+              <input value={form.phone3} onChange={(e) => setForm({ ...form, phone3: e.target.value })} style={inputStyle} />
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={fieldLabel}>Email</label>
+            <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={inputStyle} />
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={fieldLabel}>{form.kind === "Юрлицо" ? "БИН" : "ИИН"}</label>
+            <input value={form.bin} onChange={(e) => setForm({ ...form, bin: e.target.value })} style={inputStyle} />
+          </div>
+
+          {form.kind === "Физлицо" ? (
+            <div style={{ marginBottom: 12 }}>
+              <label style={fieldLabel}>Адрес</label>
+              <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} style={inputStyle} />
+            </div>
+          ) : (
+            <>
+              <div style={{ marginBottom: 12 }}>
+                <label style={fieldLabel}>Юридический адрес</label>
+                <input value={form.legal_address} onChange={(e) => setForm({ ...form, legal_address: e.target.value })} style={inputStyle} />
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={fieldLabel}>Фактический адрес</label>
+                <input value={form.actual_address} onChange={(e) => setForm({ ...form, actual_address: e.target.value })} style={inputStyle} />
+              </div>
+            </>
+          )}
+
+          <div style={{ marginBottom: 18 }}>
+            <label style={fieldLabel}>Комментарий</label>
+            <textarea value={form.comment} onChange={(e) => setForm({ ...form, comment: e.target.value })} rows={3} style={{ ...inputStyle, resize: "vertical" }} />
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              {openId !== "new" && (
+                <button
+                  onClick={remove}
+                  disabled={saving}
+                  style={{ background: c.redBg, color: c.red, border: "none", borderRadius: 8, padding: "9px 14px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, cursor: "pointer" }}
+                >
+                  Удалить
+                </button>
+              )}
+            </div>
+            <button onClick={save} disabled={saving || !form.name.trim()} style={{ ...primaryBtn, opacity: saving || !form.name.trim() ? 0.6 : 1 }}>
+              {saving ? <Spinner /> : "Сохранить"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ fontFamily: displayFont, fontSize: 20, fontWeight: 600, color: c.ink }}>Контрагенты</div>
+        <button onClick={openNew} style={primaryBtn}>
+          <Icon size={15}>+</Icon> Добавить контрагента
+        </button>
+      </div>
+
+      {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
+
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+          <span style={{ flex: 1 }}>Наименование</span>
+          <span style={{ width: 100 }}>Тип</span>
+          <span style={{ width: 150 }}>Телефон</span>
+          <span style={{ width: 170 }}>Email</span>
+        </div>
+        {list === null && (
+          <div style={{ display: "flex", gap: 8, padding: 18, color: c.steel, fontSize: 13 }}>
+            <Spinner /> Загружаю…
+          </div>
+        )}
+        {list && list.length === 0 && <div style={{ padding: 24, textAlign: "center", color: c.steel, fontSize: 13.5 }}>Контрагентов пока нет.</div>}
+        {list &&
+          list.map((cp, i) => (
+            <div
+              key={cp.id}
+              onClick={() => openDetail(cp)}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 13, cursor: "pointer" }}
+            >
+              <span style={{ flex: 1, color: c.ink }}>
+                {cp.name}
+                {cp.kind === "Юрлицо" && cp.category ? ` (${cp.category})` : ""}
+              </span>
+              <span style={{ width: 100, color: c.steel, fontSize: 12 }}>{cp.kind}</span>
+              <span style={{ width: 150, fontFamily: monoFont, fontSize: 12, color: c.steel }}>{(cp.phones && cp.phones[0]) || "—"}</span>
+              <span style={{ width: 170, fontSize: 12, color: c.steel }}>{cp.email || "—"}</span>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+
 function SettingsScreen({ session, shop, onShopUpdate }) {
   const existingPhones = shop.phones || ["", "", ""];
   const [form, setForm] = useState({
@@ -1213,13 +1476,19 @@ export default function App() {
           <Icon size={17}>🔎</Icon> Поиск по сети
         </div>
         <div
+          onClick={() => setTab("contacts")}
+          style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "contacts" ? c.amber : "transparent", color: tab === "contacts" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
+        >
+          <Icon size={17}>👥</Icon> Контрагенты
+        </div>
+        <div
           onClick={() => setTab("settings")}
           style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "settings" ? c.amber : "transparent", color: tab === "settings" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
         >
           <Icon size={17}>⚙️</Icon> Настройки
         </div>
         <div style={{ marginTop: "auto", padding: "10px 14px", fontSize: 11, color: c.steelLight, fontFamily: bodyFont }}>
-          Остальные разделы (заказы, контрагенты, документы, отчёты) подключим следующими.
+          Остальные разделы (заказы, документы, отчёты) подключим следующими.
         </div>
         <button
           onClick={() => {
@@ -1236,6 +1505,7 @@ export default function App() {
         {tab === "stock" && <StockScreen session={session} shop={shop} />}
         {tab === "sales" && <SalesScreen session={session} shop={shop} />}
         {tab === "network" && <NetworkSearchScreen session={session} shop={shop} onShopUpdate={setShop} />}
+        {tab === "contacts" && <ContactsScreen session={session} shop={shop} />}
         {tab === "settings" && <SettingsScreen session={session} shop={shop} onShopUpdate={setShop} />}
       </main>
     </div>
