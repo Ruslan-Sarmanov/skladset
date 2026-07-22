@@ -1896,7 +1896,7 @@ function StockScreen({ session, shop }) {
   const [error, setError] = useState("");
   const [formMode, setFormMode] = useState(null); // null | "new" | item
   const [query, setQuery] = useState("");
-  const [sortKey, setSortKey] = useState("name"); // "name" | "qty" | "price"
+  const [sortKey, setSortKey] = useState("name"); // "sku" | "alt_sku" | "name" | "qty" | "price" | "purchase_price"
   const [sortDir, setSortDir] = useState("asc");
   const [showPurchase, setShowPurchase] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -1974,8 +1974,11 @@ function StockScreen({ session, shop }) {
     })
     .sort((a, b) => {
       const mult = sortDir === "asc" ? 1 : -1;
+      if (sortKey === "sku") return a.sku.localeCompare(b.sku) * mult;
+      if (sortKey === "alt_sku") return (a.alt_sku || "").localeCompare(b.alt_sku || "") * mult;
       if (sortKey === "qty") return (a.qty - b.qty) * mult;
       if (sortKey === "price") return (a.price - b.price) * mult;
+      if (sortKey === "purchase_price") return (a.purchase_price - b.purchase_price) * mult;
       return a.name.localeCompare(b.name) * mult;
     });
 
@@ -2032,9 +2035,13 @@ function StockScreen({ session, shop }) {
       </div>
 
       <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
-        <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
-          <span style={{ width: 120 }}>Артикул</span>
-          <span style={{ width: 100 }}>Субс / аналог</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 16px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600, letterSpacing: 0.2 }}>
+          <span onClick={() => toggleSort("sku")} style={{ width: 120, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center" }}>
+            Артикул {sortArrow("sku")}
+          </span>
+          <span onClick={() => toggleSort("alt_sku")} style={{ width: 100, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center" }}>
+            Субс / аналог {sortArrow("alt_sku")}
+          </span>
           <span onClick={() => toggleSort("name")} style={{ flex: 1, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center" }}>
             Наименование {sortArrow("name")}
           </span>
@@ -2042,10 +2049,12 @@ function StockScreen({ session, shop }) {
           <span onClick={() => toggleSort("qty")} style={{ width: 60, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
             Кол. {sortArrow("qty")}
           </span>
-          <span onClick={() => toggleSort("price")} style={{ width: 80, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+          <span onClick={() => toggleSort("price")} style={{ width: 84, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
             Цена {sortArrow("price")}
           </span>
-          <span style={{ width: 80, textAlign: "right" }}>Закуп</span>
+          <span onClick={() => toggleSort("purchase_price")} style={{ width: 84, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+            Закуп {sortArrow("purchase_price")}
+          </span>
           <span style={{ width: 24 }} />
         </div>
 
@@ -2068,22 +2077,24 @@ function StockScreen({ session, shop }) {
             onClick={() => setFormMode(it)}
             style={{
               display: "flex",
-              gap: 8,
-              padding: "10px 14px",
+              alignItems: "center",
+              gap: 12,
+              padding: "13px 16px",
               borderTop: i === 0 ? "none" : `1px solid ${c.border}`,
+              background: i % 2 === 1 ? c.cloud : "#fff",
               fontFamily: bodyFont,
               fontSize: 13,
               cursor: "pointer",
-              alignItems: "center",
+              transition: "background 0.1s ease",
             }}
           >
             <span style={{ width: 120, fontFamily: monoFont, fontWeight: 600, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.sku}</span>
             <span style={{ width: 100, fontFamily: monoFont, fontSize: 12, color: c.steel, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.alt_sku || "—"}</span>
-            <span style={{ flex: 1, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</span>
-            <span style={{ width: 90, color: c.steel, fontSize: 12 }}>{it.model}</span>
+            <span style={{ flex: 1, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{it.name}</span>
+            <span style={{ width: 90, color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.model}</span>
             <span style={{ width: 60, textAlign: "right", fontFamily: monoFont, fontWeight: 600, color: it.qty <= it.min_qty ? c.red : c.ink }}>{it.qty}</span>
-            <span style={{ width: 80, textAlign: "right", fontFamily: monoFont, color: c.amberDark, fontWeight: 700 }}>{it.price.toLocaleString("ru-RU")}</span>
-            <span style={{ width: 80, textAlign: "right", fontFamily: monoFont, color: c.steel, letterSpacing: showPurchase ? 0 : 1 }}>
+            <span style={{ width: 84, textAlign: "right", fontFamily: monoFont, color: c.amberDark, fontWeight: 700 }}>{it.price.toLocaleString("ru-RU")}</span>
+            <span style={{ width: 84, textAlign: "right", fontFamily: monoFont, color: c.steel, letterSpacing: showPurchase ? 0 : 1 }}>
               {showPurchase ? it.purchase_price.toLocaleString("ru-RU") : "••••"}
             </span>
             <span style={{ width: 24, textAlign: "right", color: c.steelLight }}>
