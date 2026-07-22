@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import * as XLSX from "xlsx";
 
 // Tiny inline icon replacements — avoids needing to install any package.
 const Spinner = () => (
@@ -238,7 +239,7 @@ function ItemForm({ initial, onSave, onDelete, onCancel }) {
         <Field label="Артикул">
           <input placeholder="Например, 90915-YZZD4" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} style={inputStyle} />
         </Field>
-        <Field label="Артикул замены">
+        <Field label="Субс / аналог">
           <input placeholder="Необязательно" value={form.alt_sku} onChange={(e) => setForm({ ...form, alt_sku: e.target.value })} style={inputStyle} />
         </Field>
       </div>
@@ -1747,10 +1748,158 @@ function SalesScreen({ session, shop }) {
   );
 }
 
+// ---- Excel import: real parsing (xlsx lib), flexible header matching, bulk insert ----
+const EXCEL_HEADER_MAP = {
+  sku: ["артикул", "sku", "код"],
+  alt_sku: ["субс", "аналог", "артикул2", "артикул 2", "субс / аналог", "заменитель"],
+  name: ["наименование", "название", "name"],
+  model: ["модель", "model"],
+  qty: ["кол-во", "количество", "кол.", "qty"],
+  purchase_price: ["закуп", "закупочная", "закупочная цена", "цена закупа"],
+  price: ["цена", "цена продажи", "розница", "розничная"],
+};
+function matchColumn(header) {
+  const h = String(header || "").trim().toLowerCase();
+  for (const key of Object.keys(EXCEL_HEADER_MAP)) {
+    if (EXCEL_HEADER_MAP[key].some((alias) => h.includes(alias))) return key;
+  }
+  return null;
+}
+
+function ExcelImportPanel({ session, shop, onClose, onImported }) {
+  const [rows, setRows] = useState(null); // parsed preview rows
+  const [fileName, setFileName] = useState("");
+  const [error, setError] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [done, setDone] = useState(0);
+
+  function handleFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setError("");
+    setFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: "array" });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+        if (data.length < 2) {
+          setError("В файле не найдено строк с данными.");
+          return;
+        }
+        const header = data[0];
+        const colIndex = {};
+        header.forEach((h, i) => {
+          const key = matchColumn(h);
+          if (key && !(key in colIndex)) colIndex[key] = i;
+        });
+        if (colIndex.sku === undefined || colIndex.name === undefined) {
+          setError('Не нашёл колонки "Артикул" и "Наименование" — проверьте заголовки первой строки файла.');
+          return;
+        }
+        const parsed = data
+          .slice(1)
+          .filter((r) => r[colIndex.sku])
+          .map((r) => ({
+            sku: String(r[colIndex.sku]).trim(),
+            alt_sku: colIndex.alt_sku !== undefined ? String(r[colIndex.alt_sku] || "").trim() || "—" : "—",
+            name: String(r[colIndex.name] || "").trim(),
+            model: colIndex.model !== undefined ? String(r[colIndex.model] || "").trim() : "",
+            qty: colIndex.qty !== undefined ? Number(r[colIndex.qty]) || 0 : 0,
+            purchase_price: colIndex.purchase_price !== undefined ? Number(r[colIndex.purchase_price]) || 0 : 0,
+            price: colIndex.price !== undefined ? Number(r[colIndex.price]) || 0 : 0,
+            min_qty: 5,
+          }));
+        setRows(parsed);
+      } catch (err) {
+        setError("Не удалось прочитать файл: " + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  async function runImport() {
+    if (!rows || rows.length === 0) return;
+    setImporting(true);
+    setError("");
+    setDone(0);
+    const chunkSize = 50;
+    try {
+      for (let i = 0; i < rows.length; i += chunkSize) {
+        const chunk = rows.slice(i, i + chunkSize).map((r) => ({ ...r, shop_id: shop.id }));
+        await db("stock", { method: "POST", body: chunk, session, prefer: "return=minimal" });
+        setDone(Math.min(rows.length, i + chunkSize));
+      }
+      onImported();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(28,33,40,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: c.panel, borderRadius: 12, width: 520, maxHeight: "85vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${c.border}` }}>
+          <span style={{ fontFamily: displayFont, fontSize: 15, fontWeight: 600, color: c.ink }}>Загрузка из Excel</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: c.steel }}>
+            <Icon size={17}>✕</Icon>
+          </button>
+        </div>
+        <div style={{ padding: 18 }}>
+          <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 14 }}>
+            Первая строка файла — заголовки. Понимаю колонки: Артикул, Субс / аналог, Наименование, Модель, Кол-во, Закуп, Цена — в любом порядке, по ключевым словам в названии.
+          </div>
+
+          <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{ marginBottom: 14 }} />
+
+          {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
+
+          {rows && (
+            <>
+              <div style={{ background: c.greenBg, color: c.green, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>
+                Файл «{fileName}» — распознано {rows.length} позиций.
+              </div>
+              <div style={{ border: `1px solid ${c.border}`, borderRadius: 8, overflow: "hidden", maxHeight: 220, overflowY: "auto", marginBottom: 14 }}>
+                <div style={{ display: "flex", gap: 8, padding: "7px 10px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 10.5, fontWeight: 600 }}>
+                  <span style={{ width: 100 }}>Артикул</span>
+                  <span style={{ flex: 1 }}>Наименование</span>
+                  <span style={{ width: 40, textAlign: "right" }}>Кол.</span>
+                  <span style={{ width: 70, textAlign: "right" }}>Цена</span>
+                </div>
+                {rows.slice(0, 12).map((r, i) => (
+                  <div key={i} style={{ display: "flex", gap: 8, padding: "6px 10px", borderTop: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12 }}>
+                    <span style={{ width: 100, fontFamily: monoFont, color: c.steel, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.sku}</span>
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
+                    <span style={{ width: 40, textAlign: "right", fontFamily: monoFont }}>{r.qty}</span>
+                    <span style={{ width: 70, textAlign: "right", fontFamily: monoFont }}>{r.price.toLocaleString("ru-RU")}</span>
+                  </div>
+                ))}
+                {rows.length > 12 && <div style={{ padding: "6px 10px", color: c.steel, fontSize: 11.5, borderTop: `1px solid ${c.border}` }}>…и ещё {rows.length - 12}</div>}
+              </div>
+              <button onClick={runImport} disabled={importing} style={{ ...primaryBtn, opacity: importing ? 0.7 : 1 }}>
+                {importing ? <Spinner /> : `Импортировать ${rows.length} позиций`}
+                {importing && ` (${done}/${rows.length})`}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StockScreen({ session, shop }) {
   const [items, setItems] = useState(null); // null = loading
   const [error, setError] = useState("");
   const [formMode, setFormMode] = useState(null); // null | "new" | item
+  const [query, setQuery] = useState("");
+  const [sortKey, setSortKey] = useState("name"); // "name" | "qty" | "price"
+  const [sortDir, setSortDir] = useState("asc");
+  const [showPurchase, setShowPurchase] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   async function load() {
     setError("");
@@ -1800,13 +1949,51 @@ function StockScreen({ session, shop }) {
     }
   }
 
+  function toggleSort(key) {
+    if (sortKey === key) setSortDir(sortDir === "asc" ? "desc" : "asc");
+    else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+  function sortArrow(key) {
+    if (sortKey !== key) return <span style={{ opacity: 0.3, marginLeft: 4 }}>▲</span>;
+    return <span style={{ marginLeft: 4 }}>{sortDir === "asc" ? "▲" : "▼"}</span>;
+  }
+
+  const filteredSorted = (items || [])
+    .filter((it) => {
+      if (!query.trim()) return true;
+      const q = query.toLowerCase();
+      return (
+        it.sku.toLowerCase().includes(q) ||
+        (it.alt_sku || "").toLowerCase().includes(q) ||
+        it.name.toLowerCase().includes(q) ||
+        (it.model || "").toLowerCase().includes(q)
+      );
+    })
+    .sort((a, b) => {
+      const mult = sortDir === "asc" ? 1 : -1;
+      if (sortKey === "qty") return (a.qty - b.qty) * mult;
+      if (sortKey === "price") return (a.price - b.price) * mult;
+      return a.name.localeCompare(b.name) * mult;
+    });
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <div style={{ fontFamily: displayFont, fontSize: 20, fontWeight: 600, color: c.ink }}>Склад</div>
-        <button onClick={() => setFormMode(formMode === "new" ? null : "new")} style={primaryBtn}>
-          <Icon size={15}>+</Icon> Добавить товар
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => setImportOpen(true)}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: `1px solid ${c.border}`, borderRadius: 8, padding: "10px 14px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, cursor: "pointer", color: c.ink }}
+          >
+            <Icon size={14}>📄</Icon> Загрузить из Excel
+          </button>
+          <button onClick={() => setFormMode(formMode === "new" ? null : "new")} style={primaryBtn}>
+            <Icon size={15}>+</Icon> Добавить товар
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -1819,54 +2006,104 @@ function StockScreen({ session, shop }) {
       {formMode === "new" && <ItemForm onSave={saveItem} onCancel={() => setFormMode(null)} />}
       {formMode && formMode !== "new" && <ItemForm initial={formMode} onSave={saveItem} onDelete={deleteItem} onCancel={() => setFormMode(null)} />}
 
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск по артикулу, субс/аналогу, названию или модели…" style={{ ...inputStyle, flex: 1 }} />
+        <button
+          onClick={() => setShowPurchase(!showPurchase)}
+          title={showPurchase ? "Скрыть закупочную цену" : "Показать закупочную цену"}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            background: showPurchase ? c.cloud : "transparent",
+            border: `1px solid ${c.border}`,
+            borderRadius: 8,
+            padding: "0 14px",
+            fontFamily: bodyFont,
+            fontWeight: 600,
+            fontSize: 12.5,
+            cursor: "pointer",
+            color: c.steel,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {showPurchase ? "🙈 Скрыть закуп" : "👁 Показать закуп"}
+        </button>
+      </div>
+
       <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
         <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
-          <span style={{ width: 130 }}>Артикул</span>
-          <span style={{ flex: 1 }}>Наименование</span>
-          <span style={{ width: 100 }}>Модель</span>
-          <span style={{ width: 60, textAlign: "right" }}>Кол.</span>
-          <span style={{ width: 90, textAlign: "right" }}>Цена</span>
+          <span style={{ width: 120 }}>Артикул</span>
+          <span style={{ width: 100 }}>Субс / аналог</span>
+          <span onClick={() => toggleSort("name")} style={{ flex: 1, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center" }}>
+            Наименование {sortArrow("name")}
+          </span>
+          <span style={{ width: 90 }}>Модель</span>
+          <span onClick={() => toggleSort("qty")} style={{ width: 60, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+            Кол. {sortArrow("qty")}
+          </span>
+          <span onClick={() => toggleSort("price")} style={{ width: 80, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+            Цена {sortArrow("price")}
+          </span>
+          <span style={{ width: 80, textAlign: "right" }}>Закуп</span>
           <span style={{ width: 24 }} />
         </div>
 
         {items === null && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 20, fontFamily: bodyFont, fontSize: 13, color: c.steel }}>
             <Spinner /> Загружаю склад из базы…
-            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
           </div>
         )}
         {items && items.length === 0 && (
           <div style={{ padding: 24, fontFamily: bodyFont, fontSize: 13.5, color: c.steel, textAlign: "center" }}>
-            Склад пуст. Нажмите «Добавить товар» — запись сохранится в вашей базе Supabase.
+            Склад пуст. Нажмите «Добавить товар» или загрузите список из Excel.
           </div>
         )}
-        {items &&
-          items.map((it, i) => (
-            <div
-              key={it.id}
-              onClick={() => setFormMode(it)}
-              style={{
-                display: "flex",
-                gap: 8,
-                padding: "10px 14px",
-                borderTop: i === 0 ? "none" : `1px solid ${c.border}`,
-                fontFamily: bodyFont,
-                fontSize: 13,
-                cursor: "pointer",
-                alignItems: "center",
-              }}
-            >
-              <span style={{ width: 130, fontFamily: monoFont, fontWeight: 600, color: c.ink }}>{it.sku}</span>
-              <span style={{ flex: 1, color: c.ink }}>{it.name}</span>
-              <span style={{ width: 100, color: c.steel, fontSize: 12 }}>{it.model}</span>
-              <span style={{ width: 60, textAlign: "right", fontFamily: monoFont, fontWeight: 600, color: it.qty <= it.min_qty ? c.red : c.ink }}>{it.qty}</span>
-              <span style={{ width: 90, textAlign: "right", fontFamily: monoFont, color: c.amberDark, fontWeight: 700 }}>{it.price.toLocaleString("ru-RU")}</span>
-              <span style={{ width: 24, textAlign: "right", color: c.steelLight }}>
-                <Icon size={13}>✎</Icon>
-              </span>
-            </div>
-          ))}
+        {items && items.length > 0 && filteredSorted.length === 0 && (
+          <div style={{ padding: 24, fontFamily: bodyFont, fontSize: 13.5, color: c.steel, textAlign: "center" }}>Ничего не найдено по этому запросу.</div>
+        )}
+        {filteredSorted.map((it, i) => (
+          <div
+            key={it.id}
+            onClick={() => setFormMode(it)}
+            style={{
+              display: "flex",
+              gap: 8,
+              padding: "10px 14px",
+              borderTop: i === 0 ? "none" : `1px solid ${c.border}`,
+              fontFamily: bodyFont,
+              fontSize: 13,
+              cursor: "pointer",
+              alignItems: "center",
+            }}
+          >
+            <span style={{ width: 120, fontFamily: monoFont, fontWeight: 600, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.sku}</span>
+            <span style={{ width: 100, fontFamily: monoFont, fontSize: 12, color: c.steel, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.alt_sku || "—"}</span>
+            <span style={{ flex: 1, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</span>
+            <span style={{ width: 90, color: c.steel, fontSize: 12 }}>{it.model}</span>
+            <span style={{ width: 60, textAlign: "right", fontFamily: monoFont, fontWeight: 600, color: it.qty <= it.min_qty ? c.red : c.ink }}>{it.qty}</span>
+            <span style={{ width: 80, textAlign: "right", fontFamily: monoFont, color: c.amberDark, fontWeight: 700 }}>{it.price.toLocaleString("ru-RU")}</span>
+            <span style={{ width: 80, textAlign: "right", fontFamily: monoFont, color: c.steel, letterSpacing: showPurchase ? 0 : 1 }}>
+              {showPurchase ? it.purchase_price.toLocaleString("ru-RU") : "••••"}
+            </span>
+            <span style={{ width: 24, textAlign: "right", color: c.steelLight }}>
+              <Icon size={13}>✎</Icon>
+            </span>
+          </div>
+        ))}
       </div>
+
+      {importOpen && (
+        <ExcelImportPanel
+          session={session}
+          shop={shop}
+          onClose={() => setImportOpen(false)}
+          onImported={() => {
+            setImportOpen(false);
+            load();
+          }}
+        />
+      )}
     </div>
   );
 }
