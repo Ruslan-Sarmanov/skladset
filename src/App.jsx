@@ -101,6 +101,119 @@ const primaryBtn = {
   cursor: "pointer",
 };
 
+function StatCard({ label, value, tone }) {
+  return (
+    <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: "18px 20px", flex: 1, minWidth: 160 }}>
+      <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 8 }}>{label}</div>
+      <div style={{ fontFamily: displayFont, fontSize: 30, fontWeight: 600, color: tone || c.ink, letterSpacing: "-0.02em" }}>{value}</div>
+    </div>
+  );
+}
+
+function downloadPriceList(stock) {
+  const header = "Артикул;Субс/аналог;Наименование;Модель;Кол-во;Цена, ₸";
+  const rows = stock.map((p) => [p.sku, p.alt_sku, p.name, p.model, p.qty, p.price].join(";"));
+  const csv = "\uFEFF" + [header, ...rows].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "прайс-лист.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ---- Dashboard: overview stats + low-stock attention list, real stock data ----
+function DashboardScreen({ session, shop }) {
+  const [stock, setStock] = useState(null);
+  const [error, setError] = useState("");
+
+  async function load() {
+    setError("");
+    try {
+      const rows = await db("stock", { query: `?shop_id=eq.${shop.id}&order=name.asc`, session });
+      setStock(rows);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line
+  }, [shop.id]);
+
+  if (stock === null) {
+    return (
+      <div style={{ display: "flex", gap: 8, color: c.steel, fontSize: 13, padding: 12 }}>
+        <Spinner /> Загружаю дашборд…
+      </div>
+    );
+  }
+
+  const low = stock.filter((i) => i.qty <= i.min_qty);
+
+  return (
+    <div>
+      {error && (
+        <div style={{ display: "flex", gap: 8, background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>
+          <Icon size={15}>⚠</Icon> {error}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start", marginBottom: 22 }}>
+        <StatCard label="Позиций на складе" value={stock.length} />
+        <StatCard label="Ниже минимального остатка" value={low.length} tone={low.length ? c.red : c.ink} />
+        <StatCard
+          label="Видимость сети"
+          value={shop.network_visible ? "Открыт" : "Закрыт"}
+          tone={shop.network_visible ? c.green : c.steel}
+        />
+        <button
+          onClick={() => downloadPriceList(stock)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            alignSelf: "center",
+            background: "transparent",
+            color: c.ink,
+            border: `1px solid ${c.border}`,
+            borderRadius: 8,
+            padding: "10px 14px",
+            fontFamily: bodyFont,
+            fontWeight: 600,
+            fontSize: 12.5,
+            cursor: "pointer",
+          }}
+        >
+          <Icon size={14}>⬇</Icon> Скачать прайс-лист
+        </button>
+      </div>
+
+      <div style={{ fontFamily: displayFont, fontSize: 16, fontWeight: 600, color: c.ink, marginBottom: 10 }}>Требует внимания</div>
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
+        {low.length === 0 && (
+          <div style={{ padding: 18, fontFamily: bodyFont, fontSize: 13.5, color: c.steel }}>Все остатки выше минимального уровня.</div>
+        )}
+        {low.map((item, i) => (
+          <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", borderTop: i === 0 ? "none" : `1px solid ${c.border}` }}>
+            <span title={`Остаток ${item.qty} шт ниже минимального порога (${item.min_qty} шт). Пора заказать ещё.`} style={{ cursor: "help", display: "inline-flex" }}>
+              <Icon size={16}>⚠</Icon>
+            </span>
+            <div style={{ fontFamily: monoFont, fontSize: 12.5, color: c.steel, width: 130 }}>{item.sku}</div>
+            <div style={{ fontFamily: bodyFont, fontSize: 13.5, color: c.ink, flex: 1 }}>{item.name}</div>
+            <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel }}>{item.model}</div>
+            <div style={{ fontFamily: monoFont, fontSize: 13, color: c.red, fontWeight: 600, width: 60, textAlign: "right" }}>{item.qty} шт</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
 // ---- Auth screen ----
 function AuthScreen({ onSignedIn }) {
   const [mode, setMode] = useState("login"); // "login" | "signup"
@@ -2275,7 +2388,7 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [shop, setShop] = useState(null);
   const [bootError, setBootError] = useState("");
-  const [tab, setTab] = useState("stock"); // "stock" | "sales"
+  const [tab, setTab] = useState("dash");
 
   useEffect(() => {
     if (!session) return;
@@ -2332,6 +2445,12 @@ export default function App() {
           <div style={{ fontFamily: bodyFont, fontSize: 11.5, color: c.steelLight, marginTop: 2 }}>{shop.name || "Мой магазин"}</div>
         </div>
         <div
+          onClick={() => setTab("dash")}
+          style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "dash" ? c.amber : "transparent", color: tab === "dash" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
+        >
+          <Icon size={17}>📊</Icon> Дашборд
+        </div>
+        <div
           onClick={() => setTab("stock")}
           style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "stock" ? c.amber : "transparent", color: tab === "stock" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
         >
@@ -2376,6 +2495,7 @@ export default function App() {
       </aside>
 
       <main style={{ flex: 1, padding: "26px 32px", minWidth: 0 }}>
+        {tab === "dash" && <DashboardScreen session={session} shop={shop} />}
         {tab === "stock" && <StockScreen session={session} shop={shop} />}
         {tab === "network" && <NetworkSearchScreen session={session} shop={shop} onShopUpdate={setShop} />}
         {tab === "contacts" && <ContactsScreen session={session} shop={shop} />}
