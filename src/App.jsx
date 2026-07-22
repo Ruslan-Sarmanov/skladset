@@ -75,6 +75,43 @@ function genDocNumber(prefix) {
   return `${prefix}-${Date.now().toString().slice(-6)}`;
 }
 
+// Prints arbitrary HTML in a clean, isolated window — avoids all the
+// position/visibility quirks of trying to print just one part of the page.
+function printDocument(title, bodyHtml) {
+  const w = window.open("", "_blank", "width=850,height=1100");
+  if (!w) return;
+  w.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>${title}</title>
+<style>
+  @page { size: A4; margin: 16mm; }
+  * { box-sizing: border-box; }
+  body { font-family: 'Inter', 'Segoe UI', sans-serif; color: #1C2128; margin: 0; padding: 0; }
+  .mono { font-family: 'IBM Plex Mono', 'Courier New', monospace; }
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+  th, td { border: 1px solid #E2E4E9; padding: 8px 10px; font-size: 12.5px; text-align: left; }
+  th { background: #F3F4F7; color: #4A5568; font-size: 11px; text-transform: none; }
+  .right { text-align: right; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #1C2128; padding-bottom: 14px; margin-bottom: 4px; }
+  .shop-name { font-size: 19px; font-weight: 700; }
+  .muted { color: #4A5568; font-size: 12px; margin-top: 3px; }
+  .doc-title { font-size: 14px; font-weight: 700; text-align: right; }
+  tfoot td { background: #F3F4F7; font-weight: 700; font-size: 14px; }
+</style>
+</head>
+<body>
+${bodyHtml}
+</body>
+</html>`);
+  w.document.close();
+  w.focus();
+  setTimeout(() => {
+    w.print();
+  }, 300);
+}
+
 const inputStyle = {
   width: "100%",
   padding: "9px 12px",
@@ -1978,7 +2015,40 @@ function SalesLogPanel({ salesLog, shop, session, stockItems, onCommitted }) {
                 </table>
 
                 <div className="no-print">
-                  <button onClick={() => window.print()} style={{ ...primaryBtn, width: "100%" }}>
+                  <button
+                    onClick={() =>
+                      printDocument(
+                        `Накладная № ${opened.doc_number}`,
+                        `
+<div class="header">
+  <div>
+    <div class="shop-name">${shop.name || "Магазин"}</div>
+    ${shop.store_address ? `<div class="muted">${shop.store_address}</div>` : ""}
+    ${shop.phones && shop.phones.filter((p) => p && p.trim()).length ? `<div class="muted">${shop.phones.filter((p) => p && p.trim()).join(" · ")}</div>` : ""}
+  </div>
+  <div>
+    <div class="doc-title">Накладная № ${opened.doc_number}</div>
+    <div class="muted">${opened.date}</div>
+    <div class="muted">Получатель: ${opened.counterparty_name}</div>
+  </div>
+</div>
+<table>
+  <thead><tr><th>Артикул</th><th>Наименование</th><th class="right">Кол.</th><th class="right">Цена</th><th class="right">Сумма</th></tr></thead>
+  <tbody>
+    ${(opened.items || [])
+      .map(
+        (it) =>
+          `<tr><td class="mono">${it.sku}</td><td>${it.name}</td><td class="right mono">${it.qty}</td><td class="right mono">${it.price.toLocaleString("ru-RU")}</td><td class="right mono"><strong>${(it.qty * it.price).toLocaleString("ru-RU")}</strong></td></tr>`
+      )
+      .join("")}
+  </tbody>
+  <tfoot><tr><td colspan="4">Итого</td><td class="right mono">${opened.sum.toLocaleString("ru-RU")} ₸</td></tr></tfoot>
+</table>
+`
+                      )
+                    }
+                    style={{ ...primaryBtn, width: "100%" }}
+                  >
                     🖨 Печать
                   </button>
                 </div>
@@ -2947,7 +3017,47 @@ function StockScreen({ session, shop }) {
               </table>
 
               <div className="no-print">
-                <button onClick={() => window.print()} style={{ ...primaryBtn, width: "100%" }}>
+                <button
+                  onClick={() => {
+                    const rawTotal = cart.reduce((s, r) => s + r.qty * r.price, 0);
+                    const discountTotal = Math.round((rawTotal * (opDiscount || 0)) / 100);
+                    const netTotal = rawTotal - discountTotal;
+                    printDocument(
+                      "Предварительный список",
+                      `
+<div class="header">
+  <div>
+    <div class="shop-name">${shop.name || "Магазин"}</div>
+    ${shop.store_address ? `<div class="muted">${shop.store_address}</div>` : ""}
+    ${shop.phones && shop.phones.filter((p) => p && p.trim()).length ? `<div class="muted">${shop.phones.filter((p) => p && p.trim()).join(" · ")}</div>` : ""}
+  </div>
+  <div>
+    <div class="doc-title">Предварительный список</div>
+    <div class="muted">${new Date().toLocaleDateString("ru-RU")}</div>
+  </div>
+</div>
+<table>
+  <thead><tr><th>Артикул</th><th>Наименование</th><th class="right">Кол.</th><th class="right">Цена</th><th class="right">Скидка</th><th class="right">Сумма</th></tr></thead>
+  <tbody>
+    ${cart
+      .map((r) => {
+        const lineRaw = r.qty * r.price;
+        const lineDiscount = Math.round((lineRaw * (opDiscount || 0)) / 100);
+        const lineNet = lineRaw - lineDiscount;
+        return `<tr><td class="mono">${r.sku}</td><td>${r.name}</td><td class="right mono">${r.qty}</td><td class="right mono">${r.price.toLocaleString("ru-RU")}</td><td class="right mono">${lineDiscount > 0 ? "−" + lineDiscount.toLocaleString("ru-RU") : "—"}</td><td class="right mono"><strong>${lineNet.toLocaleString("ru-RU")}</strong></td></tr>`;
+      })
+      .join("")}
+  </tbody>
+  <tfoot>
+    ${discountTotal > 0 ? `<tr><td colspan="5">Скидка ${opDiscount}%</td><td class="right mono">−${discountTotal.toLocaleString("ru-RU")} ₸</td></tr>` : ""}
+    <tr><td colspan="5">Итого к оплате</td><td class="right mono">${netTotal.toLocaleString("ru-RU")} ₸</td></tr>
+  </tfoot>
+</table>
+`
+                    );
+                  }}
+                  style={{ ...primaryBtn, width: "100%" }}
+                >
                   🖨 Печать
                 </button>
               </div>
