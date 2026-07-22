@@ -184,7 +184,7 @@ function DashboardScreen({ session, shop }) {
         />
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, marginBottom: 22 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 22 }}>
         <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel }}>
           Зарегистрировано магазинов в сети: <strong style={{ color: c.ink }}>{shopCount === null ? "…" : shopCount}</strong>
         </div>
@@ -194,6 +194,7 @@ function DashboardScreen({ session, shop }) {
             display: "flex",
             alignItems: "center",
             gap: 6,
+            flexShrink: 0,
             background: "transparent",
             color: c.ink,
             border: `1px solid ${c.border}`,
