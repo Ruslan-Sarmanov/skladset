@@ -103,8 +103,8 @@ const primaryBtn = {
 
 function StatCard({ label, value, tone }) {
   return (
-    <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: "18px 20px", flex: 1, minWidth: 160 }}>
-      <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 8 }}>{label}</div>
+    <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: "18px 20px", flex: 1, minWidth: 160, minHeight: 96, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+      <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, lineHeight: 1.35, minHeight: 32 }}>{label}</div>
       <div style={{ fontFamily: displayFont, fontSize: 30, fontWeight: 600, color: tone || c.ink, letterSpacing: "-0.02em" }}>{value}</div>
     </div>
   );
@@ -129,6 +129,7 @@ function downloadPriceList(stock) {
 function DashboardScreen({ session, shop }) {
   const [stock, setStock] = useState(null);
   const [error, setError] = useState("");
+  const [shopCount, setShopCount] = useState(null);
 
   async function load() {
     setError("");
@@ -139,8 +140,19 @@ function DashboardScreen({ session, shop }) {
       setError(e.message);
     }
   }
+  async function loadShopCount() {
+    try {
+      // RLS only exposes shops that are network-visible plus your own —
+      // this counts how many shops are currently reachable in the network.
+      const rows = await db("shops", { query: `?select=id`, session });
+      setShopCount(rows.length);
+    } catch (e) {
+      // non-critical, ignore silently
+    }
+  }
   useEffect(() => {
     load();
+    loadShopCount();
     // eslint-disable-next-line
   }, [shop.id]);
 
@@ -162,7 +174,7 @@ function DashboardScreen({ session, shop }) {
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start", marginBottom: 22 }}>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "stretch", marginBottom: 18 }}>
         <StatCard label="Позиций на складе" value={stock.length} />
         <StatCard label="Ниже минимального остатка" value={low.length} tone={low.length ? c.red : c.ink} />
         <StatCard
@@ -170,13 +182,18 @@ function DashboardScreen({ session, shop }) {
           value={shop.network_visible ? "Открыт" : "Закрыт"}
           tone={shop.network_visible ? c.green : c.steel}
         />
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, marginBottom: 22 }}>
+        <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel }}>
+          Зарегистрировано магазинов в сети: <strong style={{ color: c.ink }}>{shopCount === null ? "…" : shopCount}</strong>
+        </div>
         <button
           onClick={() => downloadPriceList(stock)}
           style={{
             display: "flex",
             alignItems: "center",
             gap: 6,
-            alignSelf: "center",
             background: "transparent",
             color: c.ink,
             border: `1px solid ${c.border}`,
