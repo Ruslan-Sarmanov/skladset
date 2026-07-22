@@ -469,7 +469,8 @@ function ContactsScreen({ session, shop }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
-  const [sortBy, setSortBy] = useState("name"); // "name" | "kind" | "recent"
+  const [sortKey, setSortKey] = useState("name"); // "name" | "kind"
+  const [sortDir, setSortDir] = useState("asc"); // "asc" | "desc"
   const [kindFilter, setKindFilter] = useState("all"); // "all" | "Физлицо" | "Юрлицо"
 
   async function load() {
@@ -690,10 +691,22 @@ function ContactsScreen({ session, shop }) {
       return cp.name.toLowerCase().includes(q) || phones.includes(q) || (cp.email || "").toLowerCase().includes(q);
     })
     .sort((a, b) => {
-      if (sortBy === "kind") return a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name);
-      if (sortBy === "recent") return (b.created_at || "").localeCompare(a.created_at || "");
-      return a.name.localeCompare(b.name);
+      const mult = sortDir === "asc" ? 1 : -1;
+      if (sortKey === "kind") return (a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name)) * mult;
+      return a.name.localeCompare(b.name) * mult;
     });
+
+  function toggleSort(key) {
+    if (sortKey === key) setSortDir(sortDir === "asc" ? "desc" : "asc");
+    else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+  function sortArrow(key) {
+    if (sortKey !== key) return <span style={{ opacity: 0.3, marginLeft: 4 }}>▲</span>;
+    return <span style={{ marginLeft: 4 }}>{sortDir === "asc" ? "▲" : "▼"}</span>;
+  }
 
   return (
     <div>
@@ -718,17 +731,16 @@ function ContactsScreen({ session, shop }) {
           <option value="Физлицо">Физлицо</option>
           <option value="Юрлицо">Юрлицо</option>
         </select>
-        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{ ...inputStyle, width: 170 }}>
-          <option value="name">Сортировать: по имени</option>
-          <option value="kind">Сортировать: по типу</option>
-          <option value="recent">Сортировать: сначала новые</option>
-        </select>
       </div>
 
       <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
         <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
-          <span style={{ flex: 1 }}>Наименование</span>
-          <span style={{ width: 100 }}>Тип</span>
+          <span onClick={() => toggleSort("name")} style={{ flex: 1, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center" }}>
+            Наименование {sortArrow("name")}
+          </span>
+          <span onClick={() => toggleSort("kind")} style={{ width: 100, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center" }}>
+            Тип {sortArrow("kind")}
+          </span>
           <span style={{ width: 150 }}>Телефон</span>
           <span style={{ width: 170 }}>Email</span>
         </div>
