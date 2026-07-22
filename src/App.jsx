@@ -461,7 +461,14 @@ function PaymentMethodModal({ onSelect, onClose, counterpartyKind }) {
 // ---- Network search: real cross-shop stock via the `network_stock` view ----
 // ---- Shop profile: name, phone, address (shown to network when contacted) ----
 function SettingsScreen({ session, shop, onShopUpdate }) {
-  const [form, setForm] = useState({ name: shop.name || "", phone: (shop.phones && shop.phones[0]) || "", store_address: shop.store_address || "" });
+  const existingPhones = shop.phones || ["", "", ""];
+  const [form, setForm] = useState({
+    name: shop.name || "",
+    phone1: existingPhones[0] || "",
+    phone2: existingPhones[1] || "",
+    phone3: existingPhones[2] || "",
+    store_address: shop.store_address || "",
+  });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
@@ -473,7 +480,7 @@ function SettingsScreen({ session, shop, onShopUpdate }) {
       const updated = await db("shops", {
         method: "PATCH",
         query: `?id=eq.${shop.id}`,
-        body: { name: form.name, phones: [form.phone, "", ""], store_address: form.store_address },
+        body: { name: form.name, phones: [form.phone1, form.phone2, form.phone3], store_address: form.store_address },
         session,
         prefer: "return=representation",
       });
@@ -502,8 +509,16 @@ function SettingsScreen({ session, shop, onShopUpdate }) {
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inputStyle} />
         </div>
         <div style={{ marginBottom: 12 }}>
-          <label style={fieldLabel}>Телефон</label>
-          <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} style={inputStyle} />
+          <label style={fieldLabel}>Телефон 1</label>
+          <input value={form.phone1} onChange={(e) => setForm({ ...form, phone1: e.target.value })} style={inputStyle} />
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={fieldLabel}>Телефон 2 (необязательно)</label>
+          <input value={form.phone2} onChange={(e) => setForm({ ...form, phone2: e.target.value })} style={inputStyle} />
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={fieldLabel}>Телефон 3 (необязательно)</label>
+          <input value={form.phone3} onChange={(e) => setForm({ ...form, phone3: e.target.value })} style={inputStyle} />
         </div>
         <div style={{ marginBottom: 16 }}>
           <label style={fieldLabel}>Адрес</label>
@@ -522,7 +537,6 @@ function SettingsScreen({ session, shop, onShopUpdate }) {
 
 // ---- Small contact-info popover ----
 function ContactModal({ shopName, phones, address, onClose }) {
-  const phone = (phones && phones[0]) || "";
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(28,33,40,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }} onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: c.panel, borderRadius: 12, width: 340, padding: 18 }}>
@@ -533,9 +547,19 @@ function ContactModal({ shopName, phones, address, onClose }) {
           </button>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, fontFamily: bodyFont, fontSize: 13.5, color: c.ink }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <span>📞</span> {phone || "Телефон не указан"}
-          </div>
+          {(phones || []).filter((p) => p && p.trim()).length === 0 ? (
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span>📞</span> Телефон не указан
+            </div>
+          ) : (
+            (phones || [])
+              .filter((p) => p && p.trim())
+              .map((p, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <span>📞</span> {p}
+                </div>
+              ))
+          )}
           <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
             <span>📍</span> {address || "Адрес не указан"}
           </div>
