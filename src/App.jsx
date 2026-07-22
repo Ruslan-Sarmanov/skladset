@@ -1912,9 +1912,9 @@ function SalesLogPanel({ salesLog, shop, session, stockItems, onCommitted }) {
               @media print {
                 body * { visibility: hidden; }
                 #print-area-doc, #print-area-doc * { visibility: visible; }
-                #print-area-doc { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; box-shadow: none; border: none; }
+                #print-area-doc { position: absolute; left: 0; top: 0; width: 100%; max-width: 180mm; margin: 0 auto; padding: 0; box-shadow: none; border: none; box-sizing: border-box; }
                 .no-print { display: none !important; }
-                @page { size: A4; margin: 14mm; }
+                @page { size: A4; margin: 18mm; }
               }
             `}</style>
             <div onClick={(e) => e.stopPropagation()} style={{ background: c.panel, borderRadius: 12, width: 520, maxHeight: "85vh", overflowY: "auto" }}>
@@ -2851,9 +2851,9 @@ function StockScreen({ session, shop }) {
             @media print {
               body * { visibility: hidden; }
               #print-area-op, #print-area-op * { visibility: visible; }
-              #print-area-op { position: absolute; left: 0; top: 0; width: 100%; margin: 0; box-shadow: none; border: none; }
+              #print-area-op { position: absolute; left: 0; top: 0; width: 100%; max-width: 180mm; margin: 0 auto; box-shadow: none; border: none; box-sizing: border-box; }
               .no-print { display: none !important; }
-              @page { size: A4; margin: 14mm; }
+              @page { size: A4; margin: 18mm; }
             }
           `}</style>
           <div onClick={(e) => e.stopPropagation()} style={{ background: c.panel, borderRadius: 12, width: 520, maxHeight: "85vh", overflowY: "auto" }}>
