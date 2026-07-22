@@ -1606,6 +1606,8 @@ function StockScreen({ session, shop }) {
   const [sortKey, setSortKey] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
   const [showPurchase, setShowPurchase] = useState(false);
+  const [markupPct, setMarkupPct] = useState("");
+  const [printPreviewOpen, setPrintPreviewOpen] = useState(false);
 
   // ---- operation panel (Новая операция / Журнал продаж / Загрузка из Excel) ----
   const [opTab, setOpTab] = useState("new");
@@ -1675,6 +1677,35 @@ function StockScreen({ session, shop }) {
     }
   }
 
+  async function applyMarkup() {
+    const pct = Number(markupPct);
+    if (!pct || pct <= 0 || !items) return;
+    try {
+      for (const it of items) {
+        const newPrice = Math.round((it.purchase_price * (1 + pct / 100)) / 10) * 10;
+        await db("stock", { method: "PATCH", query: `?id=eq.${it.id}`, body: { price: newPrice }, session, prefer: "return=minimal" });
+      }
+      setMarkupPct("");
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  async function roundPricesUp() {
+    if (!items) return;
+    try {
+      for (const it of items) {
+        const rounded = Math.ceil(it.price / 100) * 100;
+        if (rounded !== it.price) {
+          await db("stock", { method: "PATCH", query: `?id=eq.${it.id}`, body: { price: rounded }, session, prefer: "return=minimal" });
+        }
+      }
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
   function toggleSort(key) {
     if (sortKey === key) setSortDir(sortDir === "asc" ? "desc" : "asc");
     else {
@@ -1720,13 +1751,29 @@ function StockScreen({ session, shop }) {
   function updateQty(stock_id, qty) {
     setCart((prev) => prev.map((r) => (r.stock_id === stock_id ? { ...r, qty: Math.max(1, qty) } : r)));
   }
+  function updatePrice(stock_id, price) {
+    setCart((prev) => prev.map((r) => (r.stock_id === stock_id ? { ...r, price: Math.max(0, price) } : r)));
+  }
   function removeFromCart(stock_id) {
     setCart((prev) => prev.filter((r) => r.stock_id !== stock_id));
+  }
+
+  function checkStockAvailability() {
+    for (const row of cart) {
+      const stockItem = (items || []).find((s) => s.id === row.stock_id);
+      const available = stockItem ? stockItem.qty : 0;
+      if (row.qty > available) {
+        setOpError(`Недостаточно товара «${row.name}»: на складе ${available} шт, в операции ${row.qty} шт.`);
+        return false;
+      }
+    }
+    return true;
   }
 
   function startPost(type) {
     if (cart.length === 0) return;
     setOpError("");
+    if ((type === "Продажа" || type === "Списание") && !checkStockAvailability()) return;
     if (type === "Списание") {
       commit(type, null, null);
       return;
@@ -1835,6 +1882,41 @@ function StockScreen({ session, shop }) {
 
       {formMode === "new" && <ItemForm onSave={saveItem} onCancel={() => setFormMode(null)} />}
       {formMode && formMode !== "new" && <ItemForm initial={formMode} onSave={saveItem} onDelete={deleteItem} onCancel={() => setFormMode(null)} />}
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <span style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel }}>Наценка на весь ассортимент, %</span>
+        <input
+          type="number"
+          value={markupPct}
+          onFocus={(e) => e.target.select()}
+          onChange={(e) => setMarkupPct(e.target.value)}
+          placeholder="30"
+          style={{ width: 60, padding: "6px 8px", borderRadius: 6, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12.5 }}
+        />
+        <button
+          onClick={applyMarkup}
+          disabled={!markupPct}
+          style={{
+            background: markupPct ? c.amber : c.border,
+            color: markupPct ? c.ink : c.steelLight,
+            border: "none",
+            borderRadius: 6,
+            padding: "6px 12px",
+            fontFamily: bodyFont,
+            fontWeight: 700,
+            fontSize: 12,
+            cursor: markupPct ? "pointer" : "not-allowed",
+          }}
+        >
+          Применить
+        </button>
+        <button
+          onClick={roundPricesUp}
+          style={{ background: "transparent", color: c.ink, border: `1px solid ${c.border}`, borderRadius: 6, padding: "6px 12px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12, cursor: "pointer" }}
+        >
+          Округлить до сотен
+        </button>
+      </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск по артикулу, субс/аналогу, названию или модели…" style={{ ...inputStyle, flex: 1 }} />
@@ -2028,6 +2110,14 @@ function StockScreen({ session, shop }) {
                 onChange={(e) => setOpDiscount(Number(e.target.value) || 0)}
                 style={{ width: 56, padding: "5px 8px", borderRadius: 6, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12.5 }}
               />
+              {cart.length > 0 && (
+                <button
+                  onClick={() => setPrintPreviewOpen(true)}
+                  style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: `1px solid ${c.border}`, borderRadius: 6, padding: "6px 12px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12, cursor: "pointer", color: c.ink }}
+                >
+                  🖨 Печать предварительного списка
+                </button>
+              )}
               {cart.length === 0 && (
                 <span style={{ marginLeft: "auto", fontFamily: bodyFont, fontSize: 12, color: c.steel }}>Нажмите «+» у товара выше, чтобы добавить его в операцию.</span>
               )}
@@ -2089,7 +2179,13 @@ function StockScreen({ session, shop }) {
                     onChange={(e) => updateQty(r.stock_id, Number(e.target.value) || 1)}
                     style={{ width: 50, textAlign: "right", padding: "3px 6px", borderRadius: 5, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12 }}
                   />
-                  <span style={{ width: 80, textAlign: "right", fontFamily: monoFont }}>{r.price.toLocaleString("ru-RU")}</span>
+                  <input
+                    type="number"
+                    value={r.price}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => updatePrice(r.stock_id, Number(e.target.value) || 0)}
+                    style={{ width: 80, textAlign: "right", padding: "3px 6px", borderRadius: 5, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12 }}
+                  />
                   <span style={{ width: 90, textAlign: "right", fontFamily: monoFont, fontWeight: 700 }}>{(r.qty * r.price).toLocaleString("ru-RU")}</span>
                   <button onClick={() => removeFromCart(r.stock_id)} style={{ width: 20, background: "none", border: "none", color: c.steelLight, cursor: "pointer" }}>
                     ✕
@@ -2102,6 +2198,19 @@ function StockScreen({ session, shop }) {
                   <span style={{ fontFamily: monoFont }}>{Math.round(cart.reduce((s, r) => s + r.qty * r.price, 0) * (1 - (opDiscount || 0) / 100)).toLocaleString("ru-RU")} ₸</span>
                 </div>
               )}
+              {(() => {
+                const belowCost = cart.filter((r) => {
+                  const stockItem = (items || []).find((s) => s.id === r.stock_id);
+                  return stockItem && r.price < stockItem.purchase_price;
+                });
+                if (belowCost.length === 0) return null;
+                return (
+                  <div style={{ display: "flex", gap: 8, padding: "10px 12px", borderTop: `1px solid ${c.border}`, background: c.redBg, color: c.red, fontFamily: bodyFont, fontSize: 12.5 }}>
+                    <Icon size={15}>⚠</Icon>
+                    Цена ниже закупочной: {belowCost.map((r) => r.name).join(", ")}
+                  </div>
+                );
+              })()}
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderTop: `1px solid ${c.border}` }}>
                 <span style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, width: 100, flexShrink: 0 }}>Комментарий</span>
                 <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Необязательно" style={{ ...inputStyle, flex: 1 }} />
@@ -2114,6 +2223,48 @@ function StockScreen({ session, shop }) {
       {postFlow?.step === "counterparty" && <CounterpartyModal session={session} shop={shop} onSelect={handleCounterpartySelected} onClose={() => setPostFlow(null)} />}
       {postFlow?.step === "payment" && (
         <PaymentMethodModal onSelect={handlePaymentSelected} onClose={() => setPostFlow(null)} counterpartyKind={flowCounterparty?.kind} />
+      )}
+
+      {printPreviewOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(28,33,40,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }} onClick={() => setPrintPreviewOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: c.panel, borderRadius: 12, width: 480, maxHeight: "85vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${c.border}` }}>
+              <span style={{ fontFamily: displayFont, fontSize: 15, fontWeight: 600, color: c.ink }}>Предварительный список</span>
+              <button onClick={() => setPrintPreviewOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", color: c.steel }}>
+                <Icon size={17}>✕</Icon>
+              </button>
+            </div>
+            <div style={{ padding: 18 }}>
+              <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 4 }}>{shop.name}</div>
+              <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginBottom: 14 }}>{new Date().toLocaleDateString("ru-RU")}</div>
+              <div style={{ border: `1px solid ${c.border}`, borderRadius: 8, overflow: "hidden", marginBottom: 14 }}>
+                <div style={{ display: "flex", gap: 8, padding: "7px 10px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+                  <span style={{ width: 100 }}>Артикул</span>
+                  <span style={{ flex: 1 }}>Наименование</span>
+                  <span style={{ width: 40, textAlign: "right" }}>Кол.</span>
+                  <span style={{ width: 80, textAlign: "right" }}>Сумма</span>
+                </div>
+                {cart.map((r, i) => (
+                  <div key={i} style={{ display: "flex", gap: 8, padding: "7px 10px", borderTop: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
+                    <span style={{ width: 100, fontFamily: monoFont, color: c.steel }}>{r.sku}</span>
+                    <span style={{ flex: 1 }}>{r.name}</span>
+                    <span style={{ width: 40, textAlign: "right", fontFamily: monoFont }}>{r.qty}</span>
+                    <span style={{ width: 80, textAlign: "right", fontFamily: monoFont, fontWeight: 600 }}>{(r.qty * r.price).toLocaleString("ru-RU")}</span>
+                  </div>
+                ))}
+                <div style={{ display: "flex", padding: "8px 10px", borderTop: `1px solid ${c.border}`, background: c.cloud, fontWeight: 700 }}>
+                  <span style={{ flex: 1 }}>Итого</span>
+                  <span style={{ fontFamily: monoFont }}>
+                    {Math.round(cart.reduce((s, r) => s + r.qty * r.price, 0) * (1 - (opDiscount || 0) / 100)).toLocaleString("ru-RU")} ₸
+                  </span>
+                </div>
+              </div>
+              <button onClick={() => window.print()} style={{ ...primaryBtn, width: "100%" }}>
+                🖨 Печать
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
