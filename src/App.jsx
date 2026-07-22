@@ -459,6 +459,92 @@ function PaymentMethodModal({ onSelect, onClose, counterpartyKind }) {
 
 // ---- Sales screen: build an operation, post it, and browse the sales log ----
 // ---- Network search: real cross-shop stock via the `network_stock` view ----
+// ---- Shop profile: name, phone, address (shown to network when contacted) ----
+function SettingsScreen({ session, shop, onShopUpdate }) {
+  const [form, setForm] = useState({ name: shop.name || "", phone: (shop.phones && shop.phones[0]) || "", store_address: shop.store_address || "" });
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save() {
+    setSaving(true);
+    setError("");
+    try {
+      const updated = await db("shops", {
+        method: "PATCH",
+        query: `?id=eq.${shop.id}`,
+        body: { name: form.name, phones: [form.phone, "", ""], store_address: form.store_address },
+        session,
+        prefer: "return=representation",
+      });
+      onShopUpdate(updated[0]);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ maxWidth: 480 }}>
+      <div style={{ fontFamily: displayFont, fontSize: 20, fontWeight: 600, color: c.ink, marginBottom: 4 }}>Настройки</div>
+      <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 18 }}>
+        Название и контакты видны другим магазинам, если они найдут ваш товар в поиске по сети.
+      </div>
+
+      {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
+
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 18 }}>
+        <div style={{ marginBottom: 12 }}>
+          <label style={fieldLabel}>Название магазина</label>
+          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inputStyle} />
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={fieldLabel}>Телефон</label>
+          <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} style={inputStyle} />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={fieldLabel}>Адрес</label>
+          <input value={form.store_address} onChange={(e) => setForm({ ...form, store_address: e.target.value })} style={inputStyle} />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={save} disabled={saving} style={{ ...primaryBtn, opacity: saving ? 0.7 : 1 }}>
+            {saving ? <Spinner /> : "Сохранить"}
+          </button>
+          {saved && <span style={{ color: c.green, fontSize: 12.5, fontFamily: bodyFont }}>Сохранено</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Small contact-info popover ----
+function ContactModal({ shopName, phones, address, onClose }) {
+  const phone = (phones && phones[0]) || "";
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(28,33,40,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: c.panel, borderRadius: 12, width: 340, padding: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <span style={{ fontFamily: displayFont, fontSize: 15, fontWeight: 600, color: c.ink }}>{shopName}</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: c.steel }}>
+            <Icon size={17}>✕</Icon>
+          </button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, fontFamily: bodyFont, fontSize: 13.5, color: c.ink }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span>📞</span> {phone || "Телефон не указан"}
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <span>📍</span> {address || "Адрес не указан"}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function NetworkSearchScreen({ session, shop, onShopUpdate }) {
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState(null);
@@ -501,6 +587,7 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
     }
   }
 
+  const [contact, setContact] = useState(null);
   const own = (rows || []).filter((r) => r.shop_id === shop.id);
   const others = (rows || []).filter((r) => r.shop_id !== shop.id);
 
@@ -569,6 +656,7 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
             <span style={{ width: 180 }}>Склад / магазин</span>
             <span style={{ width: 60, textAlign: "right" }}>Кол.</span>
             <span style={{ width: 90, textAlign: "right" }}>Цена</span>
+            <span style={{ width: 90 }} />
           </div>
           {[...own, ...others].map((r, i) => (
             <div
@@ -591,10 +679,22 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
               </span>
               <span style={{ width: 60, textAlign: "right", fontFamily: monoFont }}>{r.qty}</span>
               <span style={{ width: 90, textAlign: "right", fontFamily: monoFont, fontWeight: 700, color: c.amberDark }}>{r.price.toLocaleString("ru-RU")}</span>
+              <span style={{ width: 90, textAlign: "right" }}>
+                {r.shop_id !== shop.id && (
+                  <button
+                    onClick={() => setContact({ shopName: r.shop_name, phones: r.shop_phones, address: r.shop_address })}
+                    style={{ border: `1px solid ${c.border}`, background: "transparent", borderRadius: 6, padding: "4px 9px", fontFamily: bodyFont, fontSize: 11.5, fontWeight: 600, color: c.ink, cursor: "pointer" }}
+                  >
+                    Контакты
+                  </button>
+                )}
+              </span>
             </div>
           ))}
         </div>
       )}
+
+      {contact && <ContactModal shopName={contact.shopName} phones={contact.phones} address={contact.address} onClose={() => setContact(null)} />}
     </div>
   );
 }
@@ -1088,6 +1188,12 @@ export default function App() {
         >
           <Icon size={17}>🔎</Icon> Поиск по сети
         </div>
+        <div
+          onClick={() => setTab("settings")}
+          style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "settings" ? c.amber : "transparent", color: tab === "settings" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
+        >
+          <Icon size={17}>⚙️</Icon> Настройки
+        </div>
         <div style={{ marginTop: "auto", padding: "10px 14px", fontSize: 11, color: c.steelLight, fontFamily: bodyFont }}>
           Остальные разделы (заказы, контрагенты, документы, отчёты) подключим следующими.
         </div>
@@ -1106,6 +1212,7 @@ export default function App() {
         {tab === "stock" && <StockScreen session={session} shop={shop} />}
         {tab === "sales" && <SalesScreen session={session} shop={shop} />}
         {tab === "network" && <NetworkSearchScreen session={session} shop={shop} onShopUpdate={setShop} />}
+        {tab === "settings" && <SettingsScreen session={session} shop={shop} onShopUpdate={setShop} />}
       </main>
     </div>
   );
