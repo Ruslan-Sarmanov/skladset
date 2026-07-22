@@ -458,6 +458,147 @@ function PaymentMethodModal({ onSelect, onClose, counterpartyKind }) {
 
 
 // ---- Sales screen: build an operation, post it, and browse the sales log ----
+// ---- Network search: real cross-shop stock via the `network_stock` view ----
+function NetworkSearchScreen({ session, shop, onShopUpdate }) {
+  const [query, setQuery] = useState("");
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState("");
+  const [toggling, setToggling] = useState(false);
+
+  async function search() {
+    setError("");
+    setRows(null);
+    try {
+      const filter = query.trim()
+        ? `&or=(sku.ilike.*${encodeURIComponent(query)}*,name.ilike.*${encodeURIComponent(query)}*)`
+        : "";
+      const data = await db("network_stock", { query: `?select=*${filter}&order=shop_name.asc&limit=200`, session });
+      setRows(data);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  useEffect(() => {
+    search();
+    // eslint-disable-next-line
+  }, []);
+
+  async function toggleVisible() {
+    setToggling(true);
+    try {
+      const updated = await db("shops", {
+        method: "PATCH",
+        query: `?id=eq.${shop.id}`,
+        body: { network_visible: !shop.network_visible },
+        session,
+        prefer: "return=representation",
+      });
+      onShopUpdate(updated[0]);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setToggling(false);
+    }
+  }
+
+  const own = (rows || []).filter((r) => r.shop_id === shop.id);
+  const others = (rows || []).filter((r) => r.shop_id !== shop.id);
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ fontFamily: displayFont, fontSize: 20, fontWeight: 600, color: c.ink }}>Поиск по сети</div>
+        <button
+          onClick={toggleVisible}
+          disabled={toggling}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            background: shop.network_visible ? c.greenBg : c.cloud,
+            color: shop.network_visible ? c.green : c.steel,
+            border: `1px solid ${shop.network_visible ? c.green : c.border}`,
+            borderRadius: 8,
+            padding: "8px 14px",
+            fontFamily: bodyFont,
+            fontWeight: 600,
+            fontSize: 12.5,
+            cursor: "pointer",
+          }}
+        >
+          {shop.network_visible ? "✓ Ваш склад виден сети" : "Ваш склад скрыт от сети"}
+        </button>
+      </div>
+
+      {error && (
+        <div style={{ display: "flex", gap: 8, background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>
+          <Icon size={15}>⚠</Icon> {error}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && search()}
+          placeholder="Артикул или название детали…"
+          style={{ ...inputStyle, flex: 1 }}
+        />
+        <button onClick={search} style={primaryBtn}>
+          Найти
+        </button>
+      </div>
+
+      {rows === null && (
+        <div style={{ display: "flex", gap: 8, color: c.steel, fontSize: 13, padding: 12 }}>
+          <Spinner /> Ищу по сети…
+        </div>
+      )}
+
+      {rows && rows.length === 0 && (
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 24, textAlign: "center", color: c.steel, fontSize: 13.5 }}>
+          Ничего не найдено — либо позиции нет, либо другие магазины ещё не открыли доступ к своему складу.
+        </div>
+      )}
+
+      {rows && rows.length > 0 && (
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
+          <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+            <span style={{ width: 120 }}>Артикул</span>
+            <span style={{ flex: 1 }}>Наименование</span>
+            <span style={{ width: 180 }}>Склад / магазин</span>
+            <span style={{ width: 60, textAlign: "right" }}>Кол.</span>
+            <span style={{ width: 90, textAlign: "right" }}>Цена</span>
+          </div>
+          {[...own, ...others].map((r, i) => (
+            <div
+              key={r.stock_id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "9px 14px",
+                borderTop: i === 0 ? "none" : `1px solid ${c.border}`,
+                fontFamily: bodyFont,
+                fontSize: 12.5,
+                background: r.shop_id === shop.id ? "#FDF6EA" : "#fff",
+              }}
+            >
+              <span style={{ width: 120, fontFamily: monoFont, fontWeight: 700, color: c.ink }}>{r.sku}</span>
+              <span style={{ flex: 1, color: c.ink }}>{r.name}</span>
+              <span style={{ width: 180, color: r.shop_id === shop.id ? c.ink : c.steel, fontWeight: r.shop_id === shop.id ? 600 : 400 }}>
+                {r.shop_id === shop.id ? `Ваш склад — ${r.shop_name}` : r.shop_name}
+              </span>
+              <span style={{ width: 60, textAlign: "right", fontFamily: monoFont }}>{r.qty}</span>
+              <span style={{ width: 90, textAlign: "right", fontFamily: monoFont, fontWeight: 700, color: c.amberDark }}>{r.price.toLocaleString("ru-RU")}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SalesScreen({ session, shop }) {
   const [tab, setTab] = useState("new"); // "new" | "log"
   const [stockItems, setStockItems] = useState(null);
@@ -941,6 +1082,12 @@ export default function App() {
         >
           <Icon size={17}>🧾</Icon> Продажи
         </div>
+        <div
+          onClick={() => setTab("network")}
+          style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "network" ? c.amber : "transparent", color: tab === "network" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
+        >
+          <Icon size={17}>🔎</Icon> Поиск по сети
+        </div>
         <div style={{ marginTop: "auto", padding: "10px 14px", fontSize: 11, color: c.steelLight, fontFamily: bodyFont }}>
           Остальные разделы (заказы, контрагенты, документы, отчёты) подключим следующими.
         </div>
@@ -956,7 +1103,9 @@ export default function App() {
       </aside>
 
       <main style={{ flex: 1, padding: "26px 32px", minWidth: 0 }}>
-        {tab === "stock" ? <StockScreen session={session} shop={shop} /> : <SalesScreen session={session} shop={shop} />}
+        {tab === "stock" && <StockScreen session={session} shop={shop} />}
+        {tab === "sales" && <SalesScreen session={session} shop={shop} />}
+        {tab === "network" && <NetworkSearchScreen session={session} shop={shop} onShopUpdate={setShop} />}
       </main>
     </div>
   );
