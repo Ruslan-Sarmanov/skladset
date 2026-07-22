@@ -1773,42 +1773,66 @@ function SalesLogPanel({ salesLog, shop }) {
 
         {printOpen && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(28,33,40,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }} onClick={() => setPrintOpen(false)}>
-            <div onClick={(e) => e.stopPropagation()} style={{ background: c.panel, borderRadius: 12, width: 480, maxHeight: "85vh", overflowY: "auto" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${c.border}` }}>
+            <style>{`
+              @media print {
+                body * { visibility: hidden; }
+                #print-area-doc, #print-area-doc * { visibility: visible; }
+                #print-area-doc { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 24px; box-shadow: none; border: none; }
+                .no-print { display: none !important; }
+              }
+            `}</style>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: c.panel, borderRadius: 12, width: 520, maxHeight: "85vh", overflowY: "auto" }}>
+              <div className="no-print" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${c.border}` }}>
                 <span style={{ fontFamily: displayFont, fontSize: 15, fontWeight: 600, color: c.ink }}>Накладная</span>
                 <button onClick={() => setPrintOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", color: c.steel }}>
                   <Icon size={17}>✕</Icon>
                 </button>
               </div>
-              <div style={{ padding: 18 }}>
-                <div style={{ fontFamily: displayFont, fontSize: 17, fontWeight: 700, marginBottom: 4 }}>№ {opened.doc_number}</div>
-                <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 4 }}>{shop.name}</div>
-                <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 14 }}>
-                  {opened.date} · Получатель: {opened.counterparty_name}
+
+              <div id="print-area-doc" style={{ padding: 24 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18, paddingBottom: 14, borderBottom: `2px solid ${c.ink}` }}>
+                  <div>
+                    <div style={{ fontFamily: displayFont, fontSize: 19, fontWeight: 700, color: c.ink }}>{shop.name || "Магазин"}</div>
+                    {shop.store_address && <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginTop: 3 }}>{shop.store_address}</div>}
+                    {shop.phones && shop.phones.filter((p) => p && p.trim()).length > 0 && (
+                      <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginTop: 2 }}>{shop.phones.filter((p) => p && p.trim()).join(" · ")}</div>
+                    )}
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontFamily: displayFont, fontSize: 14, fontWeight: 700, color: c.ink }}>Накладная № {opened.doc_number}</div>
+                    <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginTop: 3 }}>{opened.date}</div>
+                    <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginTop: 2 }}>Получатель: {opened.counterparty_name}</div>
+                  </div>
                 </div>
-                <div style={{ border: `1px solid ${c.border}`, borderRadius: 8, overflow: "hidden", marginBottom: 14 }}>
-                  <div style={{ display: "flex", gap: 8, padding: "7px 10px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+
+                <div style={{ border: `1px solid ${c.border}`, borderRadius: 8, overflow: "hidden", marginBottom: 16 }}>
+                  <div style={{ display: "flex", gap: 8, padding: "8px 10px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 700 }}>
                     <span style={{ width: 100 }}>Артикул</span>
                     <span style={{ flex: 1 }}>Наименование</span>
                     <span style={{ width: 40, textAlign: "right" }}>Кол.</span>
-                    <span style={{ width: 80, textAlign: "right" }}>Сумма</span>
+                    <span style={{ width: 80, textAlign: "right" }}>Цена</span>
+                    <span style={{ width: 90, textAlign: "right" }}>Сумма</span>
                   </div>
                   {(opened.items || []).map((it, i) => (
-                    <div key={i} style={{ display: "flex", gap: 8, padding: "7px 10px", borderTop: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
+                    <div key={i} style={{ display: "flex", gap: 8, padding: "8px 10px", borderTop: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
                       <span style={{ width: 100, fontFamily: monoFont, color: c.steel }}>{it.sku}</span>
                       <span style={{ flex: 1 }}>{it.name}</span>
                       <span style={{ width: 40, textAlign: "right", fontFamily: monoFont }}>{it.qty}</span>
-                      <span style={{ width: 80, textAlign: "right", fontFamily: monoFont, fontWeight: 600 }}>{(it.qty * it.price).toLocaleString("ru-RU")}</span>
+                      <span style={{ width: 80, textAlign: "right", fontFamily: monoFont }}>{it.price.toLocaleString("ru-RU")}</span>
+                      <span style={{ width: 90, textAlign: "right", fontFamily: monoFont, fontWeight: 700 }}>{(it.qty * it.price).toLocaleString("ru-RU")}</span>
                     </div>
                   ))}
-                  <div style={{ display: "flex", padding: "8px 10px", borderTop: `1px solid ${c.border}`, background: c.cloud, fontWeight: 700 }}>
+                  <div style={{ display: "flex", padding: "10px 10px", borderTop: `1px solid ${c.border}`, background: c.cloud, fontWeight: 700, fontSize: 14 }}>
                     <span style={{ flex: 1 }}>Итого</span>
                     <span style={{ fontFamily: monoFont }}>{opened.sum.toLocaleString("ru-RU")} ₸</span>
                   </div>
                 </div>
-                <button onClick={() => window.print()} style={{ ...primaryBtn, width: "100%" }}>
-                  🖨 Печать
-                </button>
+
+                <div className="no-print">
+                  <button onClick={() => window.print()} style={{ ...primaryBtn, width: "100%" }}>
+                    🖨 Печать
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -2232,9 +2256,13 @@ function StockScreen({ session, shop }) {
 
   async function commit(type, counterparty, paymentMethod) {
     const qty = cart.reduce((s, r) => s + r.qty, 0);
-    const rawSum = cart.reduce((s, r) => s + r.qty * r.price, 0);
-    const sum = Math.round(rawSum * (1 - (opDiscount || 0) / 100));
-    const itemsPayload = cart.map((r) => ({ sku: r.sku, name: r.name, qty: r.qty, price: r.price }));
+    const itemsPayload = cart.map((r) => {
+      const lineRaw = r.qty * r.price;
+      const lineDiscount = Math.round((lineRaw * (opDiscount || 0)) / 100);
+      const netUnitPrice = r.qty > 0 ? Math.round((lineRaw - lineDiscount) / r.qty) : r.price;
+      return { sku: r.sku, name: r.name, qty: r.qty, price: netUnitPrice };
+    });
+    const sum = itemsPayload.reduce((s, it) => s + it.qty * it.price, 0);
     try {
       if (type === "Заказ покупателя") {
         await db("orders", {
@@ -2558,43 +2586,61 @@ function StockScreen({ session, shop }) {
             <div style={{ border: `1px solid ${c.border}`, borderRadius: 8, overflow: "hidden" }}>
               <div style={{ display: "flex", gap: 8, padding: "8px 12px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
                 <span style={{ width: 28 }}>№</span>
-                <span style={{ width: 110 }}>Артикул</span>
+                <span style={{ width: 100 }}>Артикул</span>
                 <span style={{ flex: 1 }}>Номенклатура</span>
-                <span style={{ width: 60, textAlign: "right" }}>Кол.</span>
-                <span style={{ width: 80, textAlign: "right" }}>Цена</span>
+                <span style={{ width: 50, textAlign: "right" }}>Кол.</span>
+                <span style={{ width: 70, textAlign: "right" }}>Цена</span>
+                <span style={{ width: 70, textAlign: "right" }}>Скидка</span>
                 <span style={{ width: 90, textAlign: "right" }}>Сумма</span>
                 <span style={{ width: 20 }} />
               </div>
               {cart.length === 0 && <div style={{ padding: 18, textAlign: "center", color: c.steel, fontSize: 13 }}>Операция пуста</div>}
-              {cart.map((r, i) => (
-                <div key={r.stock_id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderTop: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
-                  <span style={{ width: 28, color: c.steel, fontFamily: monoFont }}>{i + 1}</span>
-                  <span style={{ width: 110, fontFamily: monoFont, color: c.steel, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.sku}</span>
-                  <span style={{ flex: 1, color: c.ink }}>{r.name}</span>
-                  <input
-                    type="number"
-                    value={r.qty}
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) => updateQty(r.stock_id, Number(e.target.value) || 1)}
-                    style={{ width: 50, textAlign: "right", padding: "3px 6px", borderRadius: 5, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12 }}
-                  />
-                  <input
-                    type="number"
-                    value={r.price}
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) => updatePrice(r.stock_id, Number(e.target.value) || 0)}
-                    style={{ width: 80, textAlign: "right", padding: "3px 6px", borderRadius: 5, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12 }}
-                  />
-                  <span style={{ width: 90, textAlign: "right", fontFamily: monoFont, fontWeight: 700 }}>{(r.qty * r.price).toLocaleString("ru-RU")}</span>
-                  <button onClick={() => removeFromCart(r.stock_id)} style={{ width: 20, background: "none", border: "none", color: c.steelLight, cursor: "pointer" }}>
-                    ✕
-                  </button>
-                </div>
-              ))}
+              {cart.map((r, i) => {
+                const lineRaw = r.qty * r.price;
+                const lineDiscount = Math.round((lineRaw * (opDiscount || 0)) / 100);
+                const lineNet = lineRaw - lineDiscount;
+                return (
+                  <div key={r.stock_id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderTop: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
+                    <span style={{ width: 28, color: c.steel, fontFamily: monoFont }}>{i + 1}</span>
+                    <span style={{ width: 100, fontFamily: monoFont, color: c.steel, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.sku}</span>
+                    <span style={{ flex: 1, color: c.ink }}>{r.name}</span>
+                    <input
+                      type="number"
+                      value={r.qty}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => updateQty(r.stock_id, Number(e.target.value) || 1)}
+                      style={{ width: 42, textAlign: "right", padding: "3px 6px", borderRadius: 5, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12 }}
+                    />
+                    <input
+                      type="number"
+                      value={r.price}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => updatePrice(r.stock_id, Number(e.target.value) || 0)}
+                      style={{ width: 70, textAlign: "right", padding: "3px 6px", borderRadius: 5, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12 }}
+                    />
+                    <span style={{ width: 70, textAlign: "right", fontFamily: monoFont, color: lineDiscount > 0 ? c.red : c.steelLight }}>
+                      {lineDiscount > 0 ? `−${lineDiscount.toLocaleString("ru-RU")}` : "—"}
+                    </span>
+                    <span style={{ width: 90, textAlign: "right", fontFamily: monoFont, fontWeight: 700 }}>{lineNet.toLocaleString("ru-RU")}</span>
+                    <button onClick={() => removeFromCart(r.stock_id)} style={{ width: 20, background: "none", border: "none", color: c.steelLight, cursor: "pointer" }}>
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
               {cart.length > 0 && (
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 20, padding: "8px 12px", borderTop: `1px solid ${c.border}`, background: c.cloud, fontFamily: bodyFont, fontSize: 12.5, fontWeight: 700 }}>
                   <span>Итого</span>
-                  <span style={{ fontFamily: monoFont }}>{Math.round(cart.reduce((s, r) => s + r.qty * r.price, 0) * (1 - (opDiscount || 0) / 100)).toLocaleString("ru-RU")} ₸</span>
+                  <span style={{ fontFamily: monoFont }}>
+                    {cart
+                      .reduce((s, r) => {
+                        const lineRaw = r.qty * r.price;
+                        const lineDiscount = Math.round((lineRaw * (opDiscount || 0)) / 100);
+                        return s + (lineRaw - lineDiscount);
+                      }, 0)
+                      .toLocaleString("ru-RU")}{" "}
+                    ₸
+                  </span>
                 </div>
               )}
               {(() => {
@@ -2629,41 +2675,91 @@ function StockScreen({ session, shop }) {
 
       {printPreviewOpen && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(28,33,40,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }} onClick={() => setPrintPreviewOpen(false)}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: c.panel, borderRadius: 12, width: 480, maxHeight: "85vh", overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${c.border}` }}>
+          <style>{`
+            @media print {
+              body * { visibility: hidden; }
+              #print-area-op, #print-area-op * { visibility: visible; }
+              #print-area-op { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 24px; box-shadow: none; border: none; }
+              .no-print { display: none !important; }
+            }
+          `}</style>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: c.panel, borderRadius: 12, width: 520, maxHeight: "85vh", overflowY: "auto" }}>
+            <div className="no-print" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${c.border}` }}>
               <span style={{ fontFamily: displayFont, fontSize: 15, fontWeight: 600, color: c.ink }}>Предварительный список</span>
               <button onClick={() => setPrintPreviewOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", color: c.steel }}>
                 <Icon size={17}>✕</Icon>
               </button>
             </div>
-            <div style={{ padding: 18 }}>
-              <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 4 }}>{shop.name}</div>
-              <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginBottom: 14 }}>{new Date().toLocaleDateString("ru-RU")}</div>
-              <div style={{ border: `1px solid ${c.border}`, borderRadius: 8, overflow: "hidden", marginBottom: 14 }}>
-                <div style={{ display: "flex", gap: 8, padding: "7px 10px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
-                  <span style={{ width: 100 }}>Артикул</span>
-                  <span style={{ flex: 1 }}>Наименование</span>
-                  <span style={{ width: 40, textAlign: "right" }}>Кол.</span>
-                  <span style={{ width: 80, textAlign: "right" }}>Сумма</span>
+
+            <div id="print-area-op" style={{ padding: 24 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18, paddingBottom: 14, borderBottom: `2px solid ${c.ink}` }}>
+                <div>
+                  <div style={{ fontFamily: displayFont, fontSize: 19, fontWeight: 700, color: c.ink }}>{shop.name || "Магазин"}</div>
+                  {shop.store_address && <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginTop: 3 }}>{shop.store_address}</div>}
+                  {shop.phones && shop.phones.filter((p) => p && p.trim()).length > 0 && (
+                    <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginTop: 2 }}>
+                      {shop.phones.filter((p) => p && p.trim()).join(" · ")}
+                    </div>
+                  )}
                 </div>
-                {cart.map((r, i) => (
-                  <div key={i} style={{ display: "flex", gap: 8, padding: "7px 10px", borderTop: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
-                    <span style={{ width: 100, fontFamily: monoFont, color: c.steel }}>{r.sku}</span>
-                    <span style={{ flex: 1 }}>{r.name}</span>
-                    <span style={{ width: 40, textAlign: "right", fontFamily: monoFont }}>{r.qty}</span>
-                    <span style={{ width: 80, textAlign: "right", fontFamily: monoFont, fontWeight: 600 }}>{(r.qty * r.price).toLocaleString("ru-RU")}</span>
-                  </div>
-                ))}
-                <div style={{ display: "flex", padding: "8px 10px", borderTop: `1px solid ${c.border}`, background: c.cloud, fontWeight: 700 }}>
-                  <span style={{ flex: 1 }}>Итого</span>
-                  <span style={{ fontFamily: monoFont }}>
-                    {Math.round(cart.reduce((s, r) => s + r.qty * r.price, 0) * (1 - (opDiscount || 0) / 100)).toLocaleString("ru-RU")} ₸
-                  </span>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontFamily: displayFont, fontSize: 14, fontWeight: 700, color: c.ink }}>Предварительный список</div>
+                  <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginTop: 3 }}>{new Date().toLocaleDateString("ru-RU")}</div>
                 </div>
               </div>
-              <button onClick={() => window.print()} style={{ ...primaryBtn, width: "100%" }}>
-                🖨 Печать
-              </button>
+
+              <div style={{ border: `1px solid ${c.border}`, borderRadius: 8, overflow: "hidden", marginBottom: 16 }}>
+                <div style={{ display: "flex", gap: 8, padding: "8px 10px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 700 }}>
+                  <span style={{ width: 90 }}>Артикул</span>
+                  <span style={{ flex: 1 }}>Наименование</span>
+                  <span style={{ width: 36, textAlign: "right" }}>Кол.</span>
+                  <span style={{ width: 70, textAlign: "right" }}>Цена</span>
+                  <span style={{ width: 65, textAlign: "right" }}>Скидка</span>
+                  <span style={{ width: 85, textAlign: "right" }}>Сумма</span>
+                </div>
+                {cart.map((r, i) => {
+                  const lineRaw = r.qty * r.price;
+                  const lineDiscount = Math.round((lineRaw * (opDiscount || 0)) / 100);
+                  const lineNet = lineRaw - lineDiscount;
+                  return (
+                    <div key={i} style={{ display: "flex", gap: 8, padding: "8px 10px", borderTop: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
+                      <span style={{ width: 90, fontFamily: monoFont, color: c.steel }}>{r.sku}</span>
+                      <span style={{ flex: 1 }}>{r.name}</span>
+                      <span style={{ width: 36, textAlign: "right", fontFamily: monoFont }}>{r.qty}</span>
+                      <span style={{ width: 70, textAlign: "right", fontFamily: monoFont }}>{r.price.toLocaleString("ru-RU")}</span>
+                      <span style={{ width: 65, textAlign: "right", fontFamily: monoFont, color: lineDiscount > 0 ? c.red : c.steelLight }}>
+                        {lineDiscount > 0 ? `−${lineDiscount.toLocaleString("ru-RU")}` : "—"}
+                      </span>
+                      <span style={{ width: 85, textAlign: "right", fontFamily: monoFont, fontWeight: 700 }}>{lineNet.toLocaleString("ru-RU")}</span>
+                    </div>
+                  );
+                })}
+                {(() => {
+                  const rawTotal = cart.reduce((s, r) => s + r.qty * r.price, 0);
+                  const discountTotal = Math.round((rawTotal * (opDiscount || 0)) / 100);
+                  const netTotal = rawTotal - discountTotal;
+                  return (
+                    <>
+                      {discountTotal > 0 && (
+                        <div style={{ display: "flex", padding: "6px 10px", borderTop: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12, color: c.steel }}>
+                          <span style={{ flex: 1 }}>Скидка {opDiscount}%</span>
+                          <span style={{ fontFamily: monoFont, color: c.red }}>−{discountTotal.toLocaleString("ru-RU")} ₸</span>
+                        </div>
+                      )}
+                      <div style={{ display: "flex", padding: "10px 10px", borderTop: `1px solid ${c.border}`, background: c.cloud, fontWeight: 700, fontSize: 14 }}>
+                        <span style={{ flex: 1 }}>Итого к оплате</span>
+                        <span style={{ fontFamily: monoFont }}>{netTotal.toLocaleString("ru-RU")} ₸</span>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+
+              <div className="no-print">
+                <button onClick={() => window.print()} style={{ ...primaryBtn, width: "100%" }}>
+                  🖨 Печать
+                </button>
+              </div>
             </div>
           </div>
         </div>
