@@ -1612,6 +1612,308 @@ function matchColumn(header) {
 }
 
 // ---- Excel import, embedded as a tab inside the Склад operation panel ----
+// ---- Return flow: pick the original sale this return is based on ----
+function ReturnSourceModal({ salesLog, cartSkus, onSelect, onClose }) {
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  const candidates = (salesLog || []).filter((d) => {
+    if (d.type !== "Продажа") return false;
+    if (dateFrom && d.date < dateFrom) return false;
+    if (dateTo && d.date > dateTo) return false;
+    return (d.items || []).some((it) => cartSkus.includes(it.sku));
+  });
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(28,33,40,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: c.panel, borderRadius: 12, width: 480, maxHeight: "80vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${c.border}` }}>
+          <span style={{ fontFamily: displayFont, fontSize: 15, fontWeight: 600, color: c.ink }}>Из какой продажи возврат?</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: c.steel }}>
+            <Icon size={17}>✕</Icon>
+          </button>
+        </div>
+        <div style={{ padding: 18 }}>
+          <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 10 }}>
+            Показаны продажи, где встречается хотя бы одна из позиций текущей операции.
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel }}>с</span>
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ padding: "5px 8px", borderRadius: 6, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12 }} />
+            <span style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel }}>по</span>
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ padding: "5px 8px", borderRadius: 6, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12 }} />
+          </div>
+
+          <div style={{ border: `1px solid ${c.border}`, borderRadius: 8, overflow: "hidden", maxHeight: 320, overflowY: "auto" }}>
+            {candidates.length === 0 && (
+              <div style={{ padding: 16, fontFamily: bodyFont, fontSize: 12.5, color: c.steel }}>Продаж с этой позицией за выбранный период не найдено.</div>
+            )}
+            {candidates.map((d, i) => (
+              <div
+                key={d.id}
+                onClick={() => onSelect(d)}
+                style={{ padding: "10px 12px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, cursor: "pointer", display: "flex", flexDirection: "column", gap: 3 }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ fontFamily: bodyFont, fontWeight: 600, fontSize: 13, color: c.ink }}>{d.counterparty_name}</span>
+                  <span style={{ fontFamily: monoFont, fontSize: 12, color: c.steel }}>{d.date}</span>
+                </div>
+                <div style={{ fontFamily: bodyFont, fontSize: 11.5, color: c.steel }}>
+                  {d.doc_number} · {d.qty} шт на {d.sum.toLocaleString("ru-RU")} ₸{d.payment_method ? ` · ${d.payment_method}` : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// ---- Журнал продаж: date range + sku search + totals + detail/print ----
+function SalesLogPanel({ salesLog, shop }) {
+  const [dateFrom, setDateFrom] = useState(todayISO());
+  const [dateTo, setDateTo] = useState(todayISO());
+  const [skuQuery, setSkuQuery] = useState("");
+  const [openId, setOpenId] = useState(null);
+  const [printOpen, setPrintOpen] = useState(false);
+
+  const list = salesLog || [];
+  const filtered = list.filter((d) => {
+    if (dateFrom && d.date < dateFrom) return false;
+    if (dateTo && d.date > dateTo) return false;
+    if (skuQuery.trim() && !(d.items || []).some((it) => it.sku.toLowerCase().includes(skuQuery.toLowerCase()))) return false;
+    return true;
+  });
+  const opened = list.find((d) => d.id === openId);
+
+  const totals = filtered.reduce(
+    (acc, d) => {
+      if (d.type === "Продажа") {
+        acc.sales += d.sum;
+        acc.salesQty += d.qty;
+      } else if (d.type === "Возврат от покупателя") {
+        acc.returns += d.sum;
+      } else if (d.type === "Списание") {
+        acc.writeoff += d.sum;
+      }
+      return acc;
+    },
+    { sales: 0, returns: 0, writeoff: 0, salesQty: 0 }
+  );
+  const netTotal = totals.sales - totals.returns - totals.writeoff;
+
+  function typeColor(t) {
+    if (t === "Продажа") return c.green;
+    if (t === "Возврат от покупателя") return c.amberDark;
+    return c.red;
+  }
+  function typeBg(t) {
+    if (t === "Продажа") return c.greenBg;
+    if (t === "Возврат от покупателя") return "#FDF3E2";
+    return c.redBg;
+  }
+
+  if (opened) {
+    return (
+      <div style={{ padding: 14 }}>
+        <button
+          onClick={() => setOpenId(null)}
+          style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "none", color: c.steel, fontFamily: bodyFont, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: 12 }}
+        >
+          ← К журналу продаж
+        </button>
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
+          <div style={{ padding: "14px 18px", borderBottom: `1px solid ${c.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontFamily: displayFont, fontSize: 16, fontWeight: 600, color: c.ink }}>{opened.doc_number}</span>
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: typeColor(opened.type), background: typeBg(opened.type), padding: "2px 8px", borderRadius: 4 }}>{opened.type}</span>
+              </div>
+              <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginTop: 4 }}>
+                {opened.date} · {opened.counterparty_name}
+                {opened.payment_method ? ` · ${opened.payment_method}` : ""}
+              </div>
+            </div>
+            <button
+              onClick={() => setPrintOpen(true)}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", color: c.ink, border: `1px solid ${c.border}`, borderRadius: 8, padding: "8px 14px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, cursor: "pointer" }}
+            >
+              🖨 Печать накладной
+            </button>
+          </div>
+          <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+            <span style={{ width: 130 }}>Артикул</span>
+            <span style={{ flex: 1 }}>Наименование</span>
+            <span style={{ width: 50, textAlign: "right" }}>Кол.</span>
+            <span style={{ width: 90, textAlign: "right" }}>Цена</span>
+            <span style={{ width: 100, textAlign: "right" }}>Сумма</span>
+          </div>
+          {(opened.items || []).map((it, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
+              <span style={{ width: 130, fontFamily: monoFont, color: c.steel }}>{it.sku}</span>
+              <span style={{ flex: 1, color: c.ink }}>{it.name}</span>
+              <span style={{ width: 50, textAlign: "right", fontFamily: monoFont }}>{it.qty}</span>
+              <span style={{ width: 90, textAlign: "right", fontFamily: monoFont }}>{it.price.toLocaleString("ru-RU")}</span>
+              <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontWeight: 600 }}>{(it.qty * it.price).toLocaleString("ru-RU")}</span>
+            </div>
+          ))}
+          <div style={{ display: "flex", padding: "8px 10px", borderTop: `1px solid ${c.border}`, background: c.cloud }}>
+            <span style={{ flex: 1, fontFamily: bodyFont, fontSize: 12.5, fontWeight: 600, color: c.ink }}>Итого</span>
+            <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontSize: 12.5, fontWeight: 700, color: c.ink }}>{opened.sum.toLocaleString("ru-RU")}</span>
+          </div>
+          {opened.comment && (
+            <div style={{ padding: "10px 18px", borderTop: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5, color: c.steel }}>Комментарий: {opened.comment}</div>
+          )}
+        </div>
+
+        {printOpen && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(28,33,40,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }} onClick={() => setPrintOpen(false)}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: c.panel, borderRadius: 12, width: 480, maxHeight: "85vh", overflowY: "auto" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${c.border}` }}>
+                <span style={{ fontFamily: displayFont, fontSize: 15, fontWeight: 600, color: c.ink }}>Накладная</span>
+                <button onClick={() => setPrintOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", color: c.steel }}>
+                  <Icon size={17}>✕</Icon>
+                </button>
+              </div>
+              <div style={{ padding: 18 }}>
+                <div style={{ fontFamily: displayFont, fontSize: 17, fontWeight: 700, marginBottom: 4 }}>№ {opened.doc_number}</div>
+                <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 4 }}>{shop.name}</div>
+                <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 14 }}>
+                  {opened.date} · Получатель: {opened.counterparty_name}
+                </div>
+                <div style={{ border: `1px solid ${c.border}`, borderRadius: 8, overflow: "hidden", marginBottom: 14 }}>
+                  <div style={{ display: "flex", gap: 8, padding: "7px 10px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+                    <span style={{ width: 100 }}>Артикул</span>
+                    <span style={{ flex: 1 }}>Наименование</span>
+                    <span style={{ width: 40, textAlign: "right" }}>Кол.</span>
+                    <span style={{ width: 80, textAlign: "right" }}>Сумма</span>
+                  </div>
+                  {(opened.items || []).map((it, i) => (
+                    <div key={i} style={{ display: "flex", gap: 8, padding: "7px 10px", borderTop: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
+                      <span style={{ width: 100, fontFamily: monoFont, color: c.steel }}>{it.sku}</span>
+                      <span style={{ flex: 1 }}>{it.name}</span>
+                      <span style={{ width: 40, textAlign: "right", fontFamily: monoFont }}>{it.qty}</span>
+                      <span style={{ width: 80, textAlign: "right", fontFamily: monoFont, fontWeight: 600 }}>{(it.qty * it.price).toLocaleString("ru-RU")}</span>
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", padding: "8px 10px", borderTop: `1px solid ${c.border}`, background: c.cloud, fontWeight: 700 }}>
+                    <span style={{ flex: 1 }}>Итого</span>
+                    <span style={{ fontFamily: monoFont }}>{opened.sum.toLocaleString("ru-RU")} ₸</span>
+                  </div>
+                </div>
+                <button onClick={() => window.print()} style={{ ...primaryBtn, width: "100%" }}>
+                  🖨 Печать
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <span style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel }}>с</span>
+        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12.5 }} />
+        <span style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel }}>по</span>
+        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12.5 }} />
+        {(dateFrom || dateTo) && (
+          <button
+            onClick={() => {
+              setDateFrom("");
+              setDateTo("");
+            }}
+            style={{ background: "transparent", border: `1px solid ${c.border}`, borderRadius: 6, padding: "5px 10px", fontFamily: bodyFont, fontSize: 12, fontWeight: 600, color: c.ink, cursor: "pointer" }}
+          >
+            Показать всё
+          </button>
+        )}
+        <input
+          value={skuQuery}
+          onChange={(e) => setSkuQuery(e.target.value)}
+          placeholder="Поиск по артикулу…"
+          style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5, width: 160 }}
+        />
+        <span style={{ marginLeft: "auto", fontFamily: bodyFont, fontSize: 12, color: c.steel }}>{filtered.length} записей</span>
+      </div>
+
+      <div style={{ border: `1px solid ${c.border}`, borderRadius: 8, overflow: "hidden" }}>
+        <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+          <span style={{ width: 80 }}>Дата</span>
+          <span style={{ width: 150 }}>Тип</span>
+          <span style={{ flex: 1 }}>Контрагент</span>
+          <span style={{ width: 50, textAlign: "right" }}>Кол.</span>
+          <span style={{ width: 90, textAlign: "right" }}>Сумма</span>
+          <span style={{ width: 140 }}>Комментарий</span>
+        </div>
+        {salesLog === null && (
+          <div style={{ display: "flex", gap: 8, padding: 20, color: c.steel, fontSize: 13 }}>
+            <Spinner /> Загружаю журнал…
+          </div>
+        )}
+        {salesLog && filtered.length === 0 && <div style={{ padding: 16, fontFamily: bodyFont, fontSize: 12.5, color: c.steel }}>Нет записей за выбранный период.</div>}
+        {filtered.map((d, i) => (
+          <div
+            key={d.id}
+            onClick={() => setOpenId(d.id)}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5, cursor: "pointer" }}
+          >
+            <span style={{ width: 80, fontFamily: monoFont, color: c.steel }}>{d.date}</span>
+            <span style={{ width: 150 }}>
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: typeColor(d.type), background: typeBg(d.type), padding: "2px 8px", borderRadius: 4 }}>{d.type}</span>
+            </span>
+            <span style={{ flex: 1, color: c.ink }}>
+              {d.counterparty_name}
+              {d.payment_method ? ` · ${d.payment_method}` : ""}
+            </span>
+            <span style={{ width: 50, textAlign: "right", fontFamily: monoFont, color: c.ink }}>{d.qty}</span>
+            <span style={{ width: 90, textAlign: "right", fontFamily: monoFont, fontWeight: 600, color: c.ink }}>{d.sum.toLocaleString("ru-RU")}</span>
+            <span style={{ width: 140, fontSize: 11.5, color: c.steel, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.comment || "—"}</span>
+          </div>
+        ))}
+        {filtered.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderTop: `1px solid ${c.border}`, background: c.cloud }}>
+            <span style={{ width: 80 }} />
+            <span style={{ width: 150 }} />
+            <span style={{ flex: 1, fontFamily: bodyFont, fontSize: 12.5, fontWeight: 700, color: c.ink }}>Итого за период</span>
+            <span style={{ width: 50, textAlign: "right", fontFamily: monoFont, fontWeight: 700, color: c.ink }}>{totals.salesQty}</span>
+            <span style={{ width: 90, textAlign: "right", fontFamily: monoFont, fontWeight: 700, color: c.ink }}>{netTotal.toLocaleString("ru-RU")}</span>
+            <span style={{ width: 140 }} />
+          </div>
+        )}
+      </div>
+
+      {filtered.length > 0 && (
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
+          <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: "10px 16px" }}>
+            <div style={{ fontFamily: bodyFont, fontSize: 11, color: c.steel }}>Продажи</div>
+            <div style={{ fontFamily: displayFont, fontSize: 17, fontWeight: 700, color: c.green }}>{totals.sales.toLocaleString("ru-RU")} ₸</div>
+          </div>
+          <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: "10px 16px" }}>
+            <div style={{ fontFamily: bodyFont, fontSize: 11, color: c.steel }}>Возвраты</div>
+            <div style={{ fontFamily: displayFont, fontSize: 17, fontWeight: 700, color: c.amberDark }}>{totals.returns.toLocaleString("ru-RU")} ₸</div>
+          </div>
+          <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: "10px 16px" }}>
+            <div style={{ fontFamily: bodyFont, fontSize: 11, color: c.steel }}>Списания</div>
+            <div style={{ fontFamily: displayFont, fontSize: 17, fontWeight: 700, color: c.red }}>{totals.writeoff.toLocaleString("ru-RU")} ₸</div>
+          </div>
+          <div style={{ background: c.ink, borderRadius: 10, padding: "10px 16px" }}>
+            <div style={{ fontFamily: bodyFont, fontSize: 11, color: "#B8C0CC" }}>Итого (чистыми)</div>
+            <div style={{ fontFamily: displayFont, fontSize: 17, fontWeight: 700, color: "#fff" }}>{netTotal.toLocaleString("ru-RU")} ₸</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ExcelImportInline({ session, shop, onImported }) {
   const [rows, setRows] = useState(null);
   const [fileName, setFileName] = useState("");
@@ -1909,12 +2211,20 @@ function StockScreen({ session, shop }) {
       commit(type, null, null);
       return;
     }
+    if (type === "Возврат от покупателя") {
+      setPostFlow({ type, step: "returnSource" });
+      return;
+    }
     setPostFlow({ type, step: "counterparty" });
   }
   function handleCounterpartySelected(cp) {
     setFlowCounterparty(cp);
     if (postFlow.type === "Продажа") setPostFlow({ ...postFlow, step: "payment" });
     else commit(postFlow.type, cp, null);
+  }
+  function handleReturnSourceSelected(sale) {
+    const cp = { id: sale.counterparty_id, name: sale.counterparty_name, kind: sale.counterparty_kind };
+    commit("Возврат от покупателя", cp, null);
   }
   function handlePaymentSelected(method) {
     commit(postFlow.type, flowCounterparty, method);
@@ -2185,49 +2495,7 @@ function StockScreen({ session, shop }) {
       <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
         {opTab === "excel" && <ExcelImportInline session={session} shop={shop} onImported={load} />}
 
-        {opTab === "log" && (
-          <div>
-            <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
-              <span style={{ width: 90 }}>Дата</span>
-              <span style={{ width: 140 }}>Тип</span>
-              <span style={{ flex: 1 }}>Контрагент</span>
-              <span style={{ width: 50, textAlign: "right" }}>Кол.</span>
-              <span style={{ width: 100, textAlign: "right" }}>Сумма</span>
-            </div>
-            {salesLog === null && (
-              <div style={{ display: "flex", gap: 8, padding: 20, color: c.steel, fontSize: 13 }}>
-                <Spinner /> Загружаю журнал…
-              </div>
-            )}
-            {salesLog && salesLog.length === 0 && <div style={{ padding: 24, textAlign: "center", color: c.steel, fontSize: 13.5 }}>Записей пока нет.</div>}
-            {salesLog &&
-              salesLog.map((d, i) => (
-                <div key={d.id} style={{ display: "flex", gap: 8, padding: "10px 14px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 13 }}>
-                  <span style={{ width: 90, fontFamily: monoFont, color: c.steel }}>{d.date}</span>
-                  <span style={{ width: 140 }}>
-                    <span
-                      style={{
-                        fontSize: 10.5,
-                        fontWeight: 700,
-                        padding: "2px 8px",
-                        borderRadius: 4,
-                        color: d.type === "Продажа" ? c.green : d.type === "Возврат от покупателя" ? c.amberDark : c.red,
-                        background: d.type === "Продажа" ? c.greenBg : d.type === "Возврат от покупателя" ? "#FDF3E2" : c.redBg,
-                      }}
-                    >
-                      {d.type}
-                    </span>
-                  </span>
-                  <span style={{ flex: 1, color: c.ink }}>
-                    {d.counterparty_name}
-                    {d.payment_method ? ` · ${d.payment_method}` : ""}
-                  </span>
-                  <span style={{ width: 50, textAlign: "right", fontFamily: monoFont }}>{d.qty}</span>
-                  <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontWeight: 700, color: c.ink }}>{d.sum.toLocaleString("ru-RU")}</span>
-                </div>
-              ))}
-          </div>
-        )}
+        {opTab === "log" && <SalesLogPanel salesLog={salesLog} shop={shop} />}
 
         {opTab === "new" && (
           <div style={{ padding: 16 }}>
@@ -2352,6 +2620,9 @@ function StockScreen({ session, shop }) {
       </div>
 
       {postFlow?.step === "counterparty" && <CounterpartyModal session={session} shop={shop} onSelect={handleCounterpartySelected} onClose={() => setPostFlow(null)} />}
+      {postFlow?.step === "returnSource" && (
+        <ReturnSourceModal salesLog={salesLog} cartSkus={cart.map((r) => r.sku)} onSelect={handleReturnSourceSelected} onClose={() => setPostFlow(null)} />
+      )}
       {postFlow?.step === "payment" && (
         <PaymentMethodModal onSelect={handlePaymentSelected} onClose={() => setPostFlow(null)} counterpartyKind={flowCounterparty?.kind} />
       )}
