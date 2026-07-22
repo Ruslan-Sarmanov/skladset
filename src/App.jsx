@@ -1462,7 +1462,7 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
   );
 }
 
-function SalesScreen({ session, shop }) {
+function OperationsPanel({ session, shop, onStockChanged }) {
   const [tab, setTab] = useState("new"); // "new" | "log"
   const [stockItems, setStockItems] = useState(null);
   const [query, setQuery] = useState("");
@@ -1566,6 +1566,7 @@ function SalesScreen({ session, shop }) {
       setFlowCounterparty(null);
       loadStock();
       loadLog();
+      if (onStockChanged) onStockChanged();
     } catch (e) {
       setError(e.message);
     }
@@ -1578,8 +1579,6 @@ function SalesScreen({ session, shop }) {
 
   return (
     <div>
-      <div style={{ fontFamily: displayFont, fontSize: 20, fontWeight: 600, color: c.ink, marginBottom: 14 }}>Продажи</div>
-
       <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
         {[
           { key: "new", label: "Новая операция" },
@@ -2104,6 +2103,10 @@ function StockScreen({ session, shop }) {
         ))}
       </div>
 
+      <div style={{ marginTop: 24 }}>
+        <OperationsPanel session={session} shop={shop} onStockChanged={load} />
+      </div>
+
       {importOpen && (
         <ExcelImportPanel
           session={session}
@@ -2187,12 +2190,6 @@ export default function App() {
           <Icon size={17}>📦</Icon> Склад
         </div>
         <div
-          onClick={() => setTab("sales")}
-          style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "sales" ? c.amber : "transparent", color: tab === "sales" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
-        >
-          <Icon size={17}>🧾</Icon> Продажи
-        </div>
-        <div
           onClick={() => setTab("network")}
           style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "network" ? c.amber : "transparent", color: tab === "network" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
         >
@@ -2232,7 +2229,6 @@ export default function App() {
 
       <main style={{ flex: 1, padding: "26px 32px", minWidth: 0 }}>
         {tab === "stock" && <StockScreen session={session} shop={shop} />}
-        {tab === "sales" && <SalesScreen session={session} shop={shop} />}
         {tab === "network" && <NetworkSearchScreen session={session} shop={shop} onShopUpdate={setShop} />}
         {tab === "contacts" && <ContactsScreen session={session} shop={shop} />}
         {tab === "orders" && <OrdersScreen session={session} shop={shop} />}
