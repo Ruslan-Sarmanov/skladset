@@ -468,6 +468,9 @@ function ContactsScreen({ session, shop }) {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [sortBy, setSortBy] = useState("name"); // "name" | "kind" | "recent"
+  const [kindFilter, setKindFilter] = useState("all"); // "all" | "Физлицо" | "Юрлицо"
 
   async function load() {
     setError("");
@@ -678,6 +681,20 @@ function ContactsScreen({ session, shop }) {
     );
   }
 
+  const filteredSorted = (list || [])
+    .filter((cp) => kindFilter === "all" || cp.kind === kindFilter)
+    .filter((cp) => {
+      if (!query.trim()) return true;
+      const q = query.toLowerCase();
+      const phones = (cp.phones || []).join(" ").toLowerCase();
+      return cp.name.toLowerCase().includes(q) || phones.includes(q) || (cp.email || "").toLowerCase().includes(q);
+    })
+    .sort((a, b) => {
+      if (sortBy === "kind") return a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name);
+      if (sortBy === "recent") return (b.created_at || "").localeCompare(a.created_at || "");
+      return a.name.localeCompare(b.name);
+    });
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -688,6 +705,25 @@ function ContactsScreen({ session, shop }) {
       </div>
 
       {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Поиск по имени, телефону или email…"
+          style={{ ...inputStyle, flex: "1 1 260px" }}
+        />
+        <select value={kindFilter} onChange={(e) => setKindFilter(e.target.value)} style={{ ...inputStyle, width: 150 }}>
+          <option value="all">Все типы</option>
+          <option value="Физлицо">Физлицо</option>
+          <option value="Юрлицо">Юрлицо</option>
+        </select>
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{ ...inputStyle, width: 170 }}>
+          <option value="name">Сортировать: по имени</option>
+          <option value="kind">Сортировать: по типу</option>
+          <option value="recent">Сортировать: сначала новые</option>
+        </select>
+      </div>
 
       <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
         <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
@@ -702,8 +738,10 @@ function ContactsScreen({ session, shop }) {
           </div>
         )}
         {list && list.length === 0 && <div style={{ padding: 24, textAlign: "center", color: c.steel, fontSize: 13.5 }}>Контрагентов пока нет.</div>}
-        {list &&
-          list.map((cp, i) => (
+        {list && list.length > 0 && filteredSorted.length === 0 && (
+          <div style={{ padding: 24, textAlign: "center", color: c.steel, fontSize: 13.5 }}>Ничего не найдено по этому запросу.</div>
+        )}
+        {filteredSorted.map((cp, i) => (
             <div
               key={cp.id}
               onClick={() => openDetail(cp)}
