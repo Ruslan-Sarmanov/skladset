@@ -691,6 +691,7 @@ function OrdersScreen({ session, shop }) {
   const [addItemQuery, setAddItemQuery] = useState("");
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [skuFilter, setSkuFilter] = useState("");
 
   async function loadList() {
     setError("");
@@ -958,6 +959,42 @@ function OrdersScreen({ session, shop }) {
           ) : (
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 14, borderTop: `1px solid ${c.border}`, flexWrap: "wrap" }}>
               <button onClick={() => setPaymentOpen(true)} style={primaryBtn}>Провести продажу</button>
+              <button
+                onClick={() =>
+                  printDocument(
+                    `Счёт на оплату № ${order.doc_number}`,
+                    `
+<div class="header">
+  <div>
+    <div class="shop-name">${shop.name || "Магазин"}</div>
+    ${shop.store_address ? `<div class="muted">${shop.store_address}</div>` : ""}
+    ${shop.phones && shop.phones.filter((p) => p && p.trim()).length ? `<div class="muted">${shop.phones.filter((p) => p && p.trim()).join(" · ")}</div>` : ""}
+  </div>
+  <div>
+    <div class="doc-title">Счёт на оплату № ${order.doc_number}</div>
+    <div class="muted">${order.date}</div>
+    <div class="muted">Плательщик: ${order.counterparty_name}</div>
+  </div>
+</div>
+<table>
+  <thead><tr><th>Артикул</th><th>Наименование</th><th class="right">Кол.</th><th class="right">Цена</th><th class="right">Сумма</th></tr></thead>
+  <tbody>
+    ${order.items
+      .map(
+        (it) =>
+          `<tr><td class="mono">${it.sku}</td><td>${it.name}</td><td class="right mono">${it.qty}</td><td class="right mono">${it.price.toLocaleString("ru-RU")}</td><td class="right mono"><strong>${(it.qty * it.price).toLocaleString("ru-RU")}</strong></td></tr>`
+      )
+      .join("")}
+  </tbody>
+  <tfoot><tr><td colspan="4">Итого к оплате</td><td class="right mono">${order.sum.toLocaleString("ru-RU")} ₸</td></tr></tfoot>
+</table>
+`
+                  )
+                }
+                style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", color: c.ink, border: `1px solid ${c.border}`, borderRadius: 8, padding: "9px 16px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, cursor: "pointer" }}
+              >
+                🖨 Счёт на оплату
+              </button>
               <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
                 {confirmDelete ? (
                   <>
@@ -1047,6 +1084,8 @@ function OrdersScreen({ session, shop }) {
   }
 
   // ---- List view ----
+  const filteredOrders = skuFilter.trim() ? (list || []).filter((o) => (o.items || []).some((it) => it.sku.toLowerCase().includes(skuFilter.toLowerCase()))) : list || [];
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -1058,6 +1097,13 @@ function OrdersScreen({ session, shop }) {
 
       {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
 
+      <input
+        value={skuFilter}
+        onChange={(e) => setSkuFilter(e.target.value)}
+        placeholder="Поиск заказов по артикулу"
+        style={{ ...inputStyle, maxWidth: 340, marginBottom: 14 }}
+      />
+
       {list === null && (
         <div style={{ display: "flex", gap: 8, color: c.steel, fontSize: 13, padding: 12 }}>
           <Spinner /> Загружаю…
@@ -1068,7 +1114,12 @@ function OrdersScreen({ session, shop }) {
           Заказов пока нет — нажмите «Новый заказ».
         </div>
       )}
-      {list && list.length > 0 && (
+      {list && list.length > 0 && filteredOrders.length === 0 && (
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 24, textAlign: "center", color: c.steel, fontSize: 13.5 }}>
+          Заказов с этим артикулом не найдено.
+        </div>
+      )}
+      {filteredOrders.length > 0 && (
         <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
           <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
             <span style={{ width: 100 }}>№</span>
@@ -1078,7 +1129,7 @@ function OrdersScreen({ session, shop }) {
             <span style={{ width: 100, textAlign: "right" }}>Сумма</span>
             <span style={{ width: 90 }}>Статус</span>
           </div>
-          {list.map((o, i) => (
+          {filteredOrders.map((o, i) => (
             <div key={o.id} onClick={() => openOrder(o)} style={{ display: "flex", gap: 8, padding: "10px 14px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 13, cursor: "pointer" }}>
               <span style={{ width: 100, fontFamily: monoFont, fontWeight: 600 }}>{o.doc_number}</span>
               <span style={{ width: 90, fontFamily: monoFont, color: c.steel }}>{o.date}</span>
