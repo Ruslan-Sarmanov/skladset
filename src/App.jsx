@@ -2433,18 +2433,31 @@ function ContactsScreen({ session, shop }) {
   );
 }
 
+const TARIFF_PLANS = [
+  { id: "trial", name: "Пробный", price: 0, limit: "до 50 позиций", note: "14 дней бесплатно, затем выбор тарифа" },
+  { id: "start", name: "Старт", price: 6900, limit: "до 150 позиций" },
+  { id: "business", name: "Бизнес", price: 14900, limit: "до 600 позиций" },
+  { id: "pro", name: "Профи", price: 24900, limit: "без ограничений" },
+];
+
 function SettingsScreen({ session, shop, onShopUpdate }) {
   const existingPhones = shop.phones || ["", "", ""];
   const [form, setForm] = useState({
     name: shop.name || "",
+    type: shop.type || "ИП",
     phone1: existingPhones[0] || "",
     phone2: existingPhones[1] || "",
     phone3: existingPhones[2] || "",
+    contact_person: shop.contact_person || "",
     store_address: shop.store_address || "",
+    legal_address: shop.legal_address || "",
+    email: shop.email || "",
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [toggling, setToggling] = useState(false);
+  const [changingPlan, setChangingPlan] = useState(false);
 
   async function save() {
     setSaving(true);
@@ -2453,7 +2466,15 @@ function SettingsScreen({ session, shop, onShopUpdate }) {
       const updated = await db("shops", {
         method: "PATCH",
         query: `?id=eq.${shop.id}`,
-        body: { name: form.name, phones: [form.phone1, form.phone2, form.phone3], store_address: form.store_address },
+        body: {
+          name: form.name,
+          type: form.type,
+          phones: [form.phone1, form.phone2, form.phone3],
+          contact_person: form.contact_person,
+          store_address: form.store_address,
+          legal_address: form.legal_address,
+          email: form.email,
+        },
         session,
         prefer: "return=representation",
       });
@@ -2467,19 +2488,86 @@ function SettingsScreen({ session, shop, onShopUpdate }) {
     }
   }
 
+  async function toggleVisible() {
+    setToggling(true);
+    setError("");
+    try {
+      const updated = await db("shops", { method: "PATCH", query: `?id=eq.${shop.id}`, body: { network_visible: !shop.network_visible }, session, prefer: "return=representation" });
+      onShopUpdate(updated[0]);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setToggling(false);
+    }
+  }
+
+  async function choosePlan(plan) {
+    setChangingPlan(true);
+    setError("");
+    try {
+      const nextDate = new Date();
+      nextDate.setDate(nextDate.getDate() + (plan.id === "trial" ? 14 : 30));
+      const updated = await db("shops", {
+        method: "PATCH",
+        query: `?id=eq.${shop.id}`,
+        body: {
+          plan_id: plan.id,
+          subscription_status: plan.id === "trial" ? "Пробный период" : "Активна",
+          subscription_price: plan.price,
+          next_payment_date: nextDate.toISOString().slice(0, 10),
+        },
+        session,
+        prefer: "return=representation",
+      });
+      onShopUpdate(updated[0]);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setChangingPlan(false);
+    }
+  }
+
+  const currentPlan = TARIFF_PLANS.find((p) => p.id === shop.plan_id) || TARIFF_PLANS[0];
+
   return (
-    <div style={{ maxWidth: 480 }}>
+    <div style={{ maxWidth: 620 }}>
       <div style={{ fontFamily: displayFont, fontSize: 20, fontWeight: 600, color: c.ink, marginBottom: 4 }}>Настройки</div>
-      <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 18 }}>
-        Название и контакты видны другим магазинам, если они найдут ваш товар в поиске по сети.
-      </div>
 
       {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
 
-      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 18 }}>
+      {/* ---- Profile ---- */}
+      <div style={{ fontFamily: displayFont, fontSize: 16, fontWeight: 600, color: c.ink, marginBottom: 4 }}>Профиль магазина</div>
+      <div style={{ fontFamily: bodyFont, fontSize: 13, color: c.steel, marginBottom: 14 }}>Эти данные используются в счетах на оплату и накладных, а контакты и адрес видны другим магазинам в поиске по сети.</div>
+
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 18, marginBottom: 24 }}>
         <div style={{ marginBottom: 12 }}>
-          <label style={fieldLabel}>Название магазина</label>
+          <label style={fieldLabel}>Наименование</label>
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inputStyle} />
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={fieldLabel}>Тип</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            {["ТОО", "ИП", "АО"].map((t) => (
+              <button
+                key={t}
+                onClick={() => setForm({ ...form, type: t })}
+                style={{
+                  flex: "0 0 70px",
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  border: `1px solid ${form.type === t ? c.amberDark : c.border}`,
+                  background: form.type === t ? "#FDF3E2" : "#fff",
+                  color: c.ink,
+                  fontFamily: bodyFont,
+                  fontWeight: 600,
+                  fontSize: 12.5,
+                  cursor: "pointer",
+                }}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
         </div>
         <div style={{ marginBottom: 12 }}>
           <label style={fieldLabel}>Телефон 1</label>
@@ -2493,9 +2581,21 @@ function SettingsScreen({ session, shop, onShopUpdate }) {
           <label style={fieldLabel}>Телефон 3 (необязательно)</label>
           <input value={form.phone3} onChange={(e) => setForm({ ...form, phone3: e.target.value })} style={inputStyle} />
         </div>
-        <div style={{ marginBottom: 16 }}>
-          <label style={fieldLabel}>Адрес</label>
+        <div style={{ marginBottom: 12 }}>
+          <label style={fieldLabel}>Контактное лицо</label>
+          <input value={form.contact_person} onChange={(e) => setForm({ ...form, contact_person: e.target.value })} style={inputStyle} />
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={fieldLabel}>Адрес магазина</label>
           <input value={form.store_address} onChange={(e) => setForm({ ...form, store_address: e.target.value })} style={inputStyle} />
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={fieldLabel}>Юридический адрес</label>
+          <input value={form.legal_address} onChange={(e) => setForm({ ...form, legal_address: e.target.value })} style={inputStyle} />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={fieldLabel}>Email</label>
+          <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={inputStyle} />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button onClick={save} disabled={saving} style={{ ...primaryBtn, opacity: saving ? 0.7 : 1 }}>
@@ -2503,6 +2603,129 @@ function SettingsScreen({ session, shop, onShopUpdate }) {
           </button>
           {saved && <span style={{ color: c.green, fontSize: 12.5, fontFamily: bodyFont }}>Сохранено</span>}
         </div>
+      </div>
+
+      {/* ---- Network visibility ---- */}
+      <div style={{ fontFamily: displayFont, fontSize: 16, fontWeight: 600, color: c.ink, marginBottom: 4 }}>Доступ к складу</div>
+      <div style={{ fontFamily: bodyFont, fontSize: 13, color: c.steel, marginBottom: 14 }}>Управляйте тем, что видят другие магазины сети. Изменения применяются сразу.</div>
+
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 16, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div>
+          <div style={{ fontFamily: bodyFont, fontWeight: 700, fontSize: 13.5, color: c.ink }}>Показывать склад сети</div>
+          <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginTop: 2 }}>
+            {shop.network_visible ? "Остатки видны другим магазинам в поиске" : "Склад виден только вам"}
+          </div>
+        </div>
+        <button
+          onClick={toggleVisible}
+          disabled={toggling}
+          style={{
+            width: 46,
+            height: 26,
+            borderRadius: 999,
+            border: "none",
+            background: shop.network_visible ? c.green : c.border,
+            position: "relative",
+            cursor: "pointer",
+            flexShrink: 0,
+            opacity: toggling ? 0.6 : 1,
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              top: 3,
+              left: shop.network_visible ? 23 : 3,
+              width: 20,
+              height: 20,
+              borderRadius: "50%",
+              background: "#fff",
+              transition: "left 0.15s ease",
+            }}
+          />
+        </button>
+      </div>
+
+      <div style={{ padding: "12px 16px", borderRadius: 8, background: c.cloud, fontFamily: bodyFont, fontSize: 12.5, color: c.steel, display: "flex", gap: 8, marginBottom: 24 }}>
+        <span>›</span> Даже при закрытом доступе вы продолжаете видеть открытые остатки других магазинов сети.
+      </div>
+
+      {/* ---- Subscription ---- */}
+      <div style={{ fontFamily: displayFont, fontSize: 16, fontWeight: 600, color: c.ink, marginBottom: 4 }}>Подписка</div>
+      <div style={{ fontFamily: bodyFont, fontSize: 13, color: c.steel, marginBottom: 14 }}>Абонентская плата за пользование СкладСеть.</div>
+
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 18, marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div>
+            <div style={{ fontFamily: bodyFont, fontWeight: 700, fontSize: 14.5, color: c.ink }}>Тариф «{currentPlan.name}»</div>
+            <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginTop: 2 }}>
+              {shop.subscription_price > 0 ? `${shop.subscription_price.toLocaleString("ru-RU")} ₸ / мес` : "Бесплатно на период пробного доступа"}
+            </div>
+          </div>
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: shop.plan_id === "trial" ? c.amberDark : c.green,
+              background: shop.plan_id === "trial" ? "#FDF3E2" : c.greenBg,
+              padding: "4px 10px",
+              borderRadius: 5,
+            }}
+          >
+            {shop.subscription_status}
+          </span>
+        </div>
+        <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel }}>
+          {shop.plan_id === "trial" ? "Пробный доступ до" : "Следующее списание"}:{" "}
+          <span style={{ fontWeight: 600, color: c.ink }}>{shop.next_payment_date || "—"}</span>
+        </div>
+      </div>
+
+      <div style={{ fontFamily: bodyFont, fontSize: 13, color: c.steel, marginBottom: 12 }}>Выберите тариф — первые 14 дней бесплатно на любом плане.</div>
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 24 }}>
+        {TARIFF_PLANS.map((plan) => {
+          const active = shop.plan_id === plan.id;
+          return (
+            <div
+              key={plan.id}
+              style={{
+                flex: "1 1 160px",
+                minWidth: 160,
+                border: `1px solid ${active ? c.amberDark : c.border}`,
+                background: active ? "#FDF6EA" : c.panel,
+                borderRadius: 10,
+                padding: 16,
+              }}
+            >
+              <div style={{ fontFamily: displayFont, fontSize: 15, fontWeight: 700, color: c.ink, marginBottom: 4 }}>{plan.name}</div>
+              <div style={{ fontFamily: monoFont, fontSize: 18, fontWeight: 700, color: c.ink, marginBottom: 4 }}>
+                {plan.price > 0 ? `${plan.price.toLocaleString("ru-RU")} ₸` : "0 ₸"}
+                {plan.price > 0 && <span style={{ fontFamily: bodyFont, fontSize: 11, fontWeight: 500, color: c.steel }}> / мес</span>}
+              </div>
+              <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginBottom: plan.note ? 4 : 12 }}>{plan.limit}</div>
+              {plan.note && <div style={{ fontFamily: bodyFont, fontSize: 11.5, color: c.amberDark, marginBottom: 12 }}>{plan.note}</div>}
+              <button
+                onClick={() => choosePlan(plan)}
+                disabled={active || changingPlan}
+                style={{
+                  width: "100%",
+                  background: active ? c.border : c.amber,
+                  color: active ? c.steelLight : c.ink,
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "8px 12px",
+                  fontFamily: bodyFont,
+                  fontWeight: 700,
+                  fontSize: 12.5,
+                  cursor: active ? "default" : "pointer",
+                }}
+              >
+                {active ? "Текущий тариф" : "Выбрать"}
+              </button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
