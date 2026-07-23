@@ -416,7 +416,7 @@ function Field({ label, children }) {
 }
 
 function ItemForm({ initial, onSave, onDelete, onCancel }) {
-  const empty = { sku: "", alt_sku: "", name: "", model: "", qty: 0, price: 0, purchase_price: 0, min_qty: 5 };
+  const empty = { sku: "", alt_sku: "", name: "", brand: "", model: "", qty: 0, price: 0, purchase_price: 0, min_qty: 5 };
   const [form, setForm] = useState(initial || empty);
   const valid = form.sku.trim() && form.name.trim();
 
@@ -436,9 +436,12 @@ function ItemForm({ initial, onSave, onDelete, onCancel }) {
           <input placeholder="Необязательно" value={form.alt_sku} onChange={(e) => setForm({ ...form, alt_sku: e.target.value })} style={inputStyle} />
         </Field>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
         <Field label="Наименование">
           <input placeholder="Например, Масляный фильтр" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inputStyle} />
+        </Field>
+        <Field label="Бренд">
+          <input placeholder="Например, Denso" value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} style={inputStyle} />
         </Field>
         <Field label="Модель">
           <input placeholder="Например, Camry" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} style={inputStyle} />
@@ -1514,7 +1517,7 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
     setRows(null);
     try {
       const filter = query.trim()
-        ? `&or=(sku.ilike.*${encodeURIComponent(query)}*,name.ilike.*${encodeURIComponent(query)}*,alt_sku.ilike.*${encodeURIComponent(query)}*)`
+        ? `&or=(sku.ilike.*${encodeURIComponent(query)}*,name.ilike.*${encodeURIComponent(query)}*,alt_sku.ilike.*${encodeURIComponent(query)}*,brand.ilike.*${encodeURIComponent(query)}*)`
         : "";
       const data = await db("network_stock", { query: `?select=*${filter}&order=shop_name.asc&limit=200`, session });
       setRows(data);
@@ -1557,13 +1560,35 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
     if (sortKey !== key) return <span style={{ opacity: 0.3, marginLeft: 4 }}>▲</span>;
     return <span style={{ marginLeft: 4 }}>{sortDir === "asc" ? "▲" : "▼"}</span>;
   }
+  // Default view: group by real article. The group matching what was typed
+  // comes first (cheapest supplier first); every other article (found via
+  // name or subs/analog match) follows in alphabetical order, each group
+  // again cheapest-first — matches how a manager compares options.
+  function groupedDefault(list) {
+    const groups = {};
+    list.forEach((r) => {
+      if (!groups[r.sku]) groups[r.sku] = [];
+      groups[r.sku].push(r);
+    });
+    const q = query.trim().toLowerCase();
+    const skus = Object.keys(groups);
+    const primarySku = skus.find((s) => s.toLowerCase() === q);
+    const orderedSkus = [
+      ...(primarySku ? [primarySku] : []),
+      ...skus.filter((s) => s !== primarySku).sort((a, b) => a.localeCompare(b, "ru")),
+    ];
+    const out = [];
+    orderedSkus.forEach((sku) => {
+      out.push(...[...groups[sku]].sort((a, b) => a.price - b.price));
+    });
+    return out;
+  }
   function applySort(list) {
-    if (!sortKey) return list;
+    if (!sortKey) return groupedDefault(list);
     const mult = sortDir === "asc" ? 1 : -1;
     return [...list].sort((a, b) => (a[sortKey] - b[sortKey]) * mult);
   }
-  const own = applySort((rows || []).filter((r) => r.shop_id === shop.id));
-  const others = applySort((rows || []).filter((r) => r.shop_id !== shop.id));
+  const displayRows = applySort(rows || []);
 
   return (
     <div>
@@ -1602,7 +1627,7 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && search()}
-          placeholder="Артикул, аналог или название детали…"
+          placeholder="Артикул, аналог, бренд или название детали…"
           style={{ ...inputStyle, flex: 1 }}
         />
         <button onClick={search} style={primaryBtn}>
@@ -1612,7 +1637,7 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
 
       {rows && rows.length > 0 && (
         <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginBottom: 10 }}>
-          Ваш склад показан первым и подсвечен — ниже магазины сети, открывшие доступ. Найдено {rows.length} позиций.
+          Сначала — предложения по искомому артикулу (дешевле сверху), затем аналоги по алфавиту, тоже по возрастанию цены. Ваши позиции подсвечены. Найдено {rows.length} позиций.
         </div>
       )}
 
@@ -1634,6 +1659,7 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
             <span style={{ width: 120, textAlign: "left" }}>Артикул</span>
             <span style={{ width: 100, textAlign: "left" }}>Субс / аналог</span>
             <span style={{ flex: 1, textAlign: "left" }}>Наименование</span>
+            <span style={{ width: 90, textAlign: "left" }}>Бренд</span>
             <span style={{ width: 170 }}>Склад / магазин</span>
             <span onClick={() => toggleSort("qty")} style={{ width: 60, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
               Кол. {sortArrow("qty")}
@@ -1643,7 +1669,7 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
             </span>
             <span style={{ width: 90 }} />
           </div>
-          {[...own, ...others].map((r, i) => (
+          {displayRows.map((r, i) => (
             <div
               key={r.stock_id}
               style={{
@@ -1660,6 +1686,7 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
               <span style={{ width: 120, textAlign: "left", fontFamily: monoFont, fontWeight: 700, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.sku}</span>
               <span style={{ width: 100, textAlign: "left", fontFamily: monoFont, fontSize: 12, color: c.steel, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.alt_sku || "—"}</span>
               <span style={{ flex: 1, textAlign: "left", color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{r.name}</span>
+              <span style={{ width: 90, textAlign: "left", color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.brand || "—"}</span>
               <span style={{ width: 170, color: r.shop_id === shop.id ? c.ink : c.steel, fontWeight: r.shop_id === shop.id ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {r.shop_id === shop.id ? `Ваш склад — ${r.shop_name}` : r.shop_name}
               </span>
@@ -1690,6 +1717,7 @@ const EXCEL_HEADER_MAP = {
   sku: ["артикул", "sku", "код"],
   alt_sku: ["субс", "аналог", "артикул2", "артикул 2", "субс / аналог", "заменитель"],
   name: ["наименование", "название", "name"],
+  brand: ["бренд", "brand", "производитель"],
   model: ["модель", "model"],
   qty: ["кол-во", "количество", "кол.", "qty"],
   purchase_price: ["закуп", "закупочная", "закупочная цена", "цена закупа"],
@@ -2302,6 +2330,7 @@ function ExcelImportInline({ session, shop, onImported }) {
             sku: String(r[colIndex.sku]).trim(),
             alt_sku: colIndex.alt_sku !== undefined ? String(r[colIndex.alt_sku] || "").trim() || "—" : "—",
             name: String(r[colIndex.name] || "").trim(),
+            brand: colIndex.brand !== undefined ? String(r[colIndex.brand] || "").trim() : "",
             model: colIndex.model !== undefined ? String(r[colIndex.model] || "").trim() : "",
             qty: colIndex.qty !== undefined ? Number(r[colIndex.qty]) || 0 : 0,
             purchase_price: colIndex.purchase_price !== undefined ? Number(r[colIndex.purchase_price]) || 0 : 0,
@@ -2341,7 +2370,7 @@ function ExcelImportInline({ session, shop, onImported }) {
   return (
     <div style={{ padding: 16 }}>
       <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 14 }}>
-        Первая строка файла — заголовки. Понимаю колонки: Артикул, Субс / аналог, Наименование, Модель, Кол-во, Закуп, Цена — в любом порядке, по ключевым словам в названии.
+        Первая строка файла — заголовки. Понимаю колонки: Артикул, Субс / аналог, Наименование, Бренд, Модель, Кол-во, Закуп, Цена — в любом порядке, по ключевым словам в названии.
       </div>
 
       <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{ marginBottom: 14 }} />
@@ -2445,14 +2474,14 @@ function StockScreen({ session, shop }) {
         await db("stock", {
           method: "PATCH",
           query: `?id=eq.${form.id}`,
-          body: { sku: form.sku, alt_sku: form.alt_sku, name: form.name, model: form.model, qty: form.qty, price: form.price, purchase_price: form.purchase_price, min_qty: form.min_qty },
+          body: { sku: form.sku, alt_sku: form.alt_sku, name: form.name, brand: form.brand, model: form.model, qty: form.qty, price: form.price, purchase_price: form.purchase_price, min_qty: form.min_qty },
           session,
           prefer: "return=minimal",
         });
       } else {
         await db("stock", {
           method: "POST",
-          body: { shop_id: shop.id, sku: form.sku, alt_sku: form.alt_sku, name: form.name, model: form.model, qty: form.qty, price: form.price, purchase_price: form.purchase_price, min_qty: form.min_qty },
+          body: { shop_id: shop.id, sku: form.sku, alt_sku: form.alt_sku, name: form.name, brand: form.brand, model: form.model, qty: form.qty, price: form.price, purchase_price: form.purchase_price, min_qty: form.min_qty },
           session,
           prefer: "return=minimal",
         });
@@ -2522,6 +2551,7 @@ function StockScreen({ session, shop }) {
         it.sku.toLowerCase().includes(q) ||
         (it.alt_sku || "").toLowerCase().includes(q) ||
         it.name.toLowerCase().includes(q) ||
+        (it.brand || "").toLowerCase().includes(q) ||
         (it.model || "").toLowerCase().includes(q)
       );
     })
@@ -2529,6 +2559,7 @@ function StockScreen({ session, shop }) {
       const mult = sortDir === "asc" ? 1 : -1;
       if (sortKey === "sku") return a.sku.localeCompare(b.sku) * mult;
       if (sortKey === "alt_sku") return (a.alt_sku || "").localeCompare(b.alt_sku || "") * mult;
+      if (sortKey === "brand") return (a.brand || "").localeCompare(b.brand || "") * mult;
       if (sortKey === "qty") return (a.qty - b.qty) * mult;
       if (sortKey === "price") return (a.price - b.price) * mult;
       if (sortKey === "purchase_price") return (a.purchase_price - b.purchase_price) * mult;
@@ -2793,7 +2824,7 @@ function StockScreen({ session, shop }) {
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск по артикулу, субс/аналогу, названию или модели…" style={{ ...inputStyle, flex: 1 }} />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск по артикулу, субс/аналогу, названию, бренду или модели…" style={{ ...inputStyle, flex: 1 }} />
         <button
           onClick={() => setShowPurchase(!showPurchase)}
           title={showPurchase ? "Скрыть закупочную цену" : "Показать закупочную цену"}
@@ -2827,6 +2858,9 @@ function StockScreen({ session, shop }) {
           </span>
           <span onClick={() => toggleSort("name")} style={{ flex: 1, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center" }}>
             Наименование {sortArrow("name")}
+          </span>
+          <span onClick={() => toggleSort("brand")} style={{ width: 90, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center" }}>
+            Бренд {sortArrow("brand")}
           </span>
           <span style={{ width: 90 }}>Модель</span>
           <span onClick={() => toggleSort("qty")} style={{ width: 60, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
@@ -2872,6 +2906,7 @@ function StockScreen({ session, shop }) {
             <span style={{ width: 120, fontFamily: monoFont, fontWeight: 600, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.sku}</span>
             <span style={{ width: 100, fontFamily: monoFont, fontSize: 12, color: c.steel, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.alt_sku || "—"}</span>
             <span style={{ flex: 1, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{it.name}</span>
+            <span style={{ width: 90, color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.brand || "—"}</span>
             <span style={{ width: 90, color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.model}</span>
             <span style={{ width: 60, textAlign: "right", fontFamily: monoFont, fontWeight: 600, color: it.qty <= it.min_qty ? c.red : c.ink }}>{it.qty}</span>
             <span style={{ width: 84, textAlign: "right", fontFamily: monoFont, color: c.amberDark, fontWeight: 700 }}>{it.price.toLocaleString("ru-RU")}</span>
