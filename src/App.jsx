@@ -1785,14 +1785,35 @@ function SalesLogPanel({ salesLog, shop, session, stockItems, onCommitted }) {
     return c.redBg;
   }
 
+  // Sums up qty already returned against a given sale (matched by the
+  // auto-generated comment "Возврат по продаже {doc_number}"), per sku.
+  function alreadyReturnedMap(sale) {
+    const map = {};
+    list.forEach((d) => {
+      if (d.type === "Возврат от покупателя" && d.comment && d.comment.startsWith(`Возврат по продаже ${sale.doc_number}`)) {
+        (d.items || []).forEach((it) => {
+          map[it.sku] = (map[it.sku] || 0) + it.qty;
+        });
+      }
+    });
+    return map;
+  }
+  function returnableItems(sale) {
+    const returned = alreadyReturnedMap(sale);
+    return sale.items
+      .map((it) => ({ ...it, maxQty: Math.max(0, it.qty - (returned[it.sku] || 0)) }))
+      .filter((it) => it.maxQty > 0);
+  }
+
   function startReturn(sale) {
-    setReturnItems(sale.items.map((it) => ({ ...it })));
+    const returnable = returnableItems(sale).map((it) => ({ sku: it.sku, name: it.name, qty: it.maxQty, price: it.price, maxQty: it.maxQty }));
+    setReturnItems(returnable);
     setReturnError("");
     setReturnNotice("");
     setReturnMode(true);
   }
   function updateReturnQty(i, qty) {
-    setReturnItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, qty: Math.max(1, qty) } : it)));
+    setReturnItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, qty: Math.min(it.maxQty, Math.max(1, qty)) } : it)));
   }
   function removeReturnItem(i) {
     setReturnItems((prev) => prev.filter((_, idx) => idx !== i));
@@ -1861,13 +1882,16 @@ function SalesLogPanel({ salesLog, shop, session, stockItems, onCommitted }) {
               </div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              {opened.type === "Продажа" && !returnMode && (
+              {opened.type === "Продажа" && !returnMode && returnableItems(opened).length > 0 && (
                 <button
                   onClick={() => startReturn(opened)}
                   style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", color: c.amberDark, border: `1px solid ${c.border}`, borderRadius: 8, padding: "8px 14px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, cursor: "pointer" }}
                 >
                   ↩ Оформить возврат
                 </button>
+              )}
+              {opened.type === "Продажа" && !returnMode && returnableItems(opened).length === 0 && (
+                <span style={{ display: "flex", alignItems: "center", fontFamily: bodyFont, fontSize: 12, color: c.steel }}>Все позиции уже возвращены</span>
               )}
               <button
                 onClick={() => setPrintOpen(true)}
@@ -1903,13 +1927,17 @@ function SalesLogPanel({ salesLog, shop, session, stockItems, onCommitted }) {
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
                   <span style={{ width: 130, fontFamily: monoFont, color: c.steel }}>{it.sku}</span>
                   <span style={{ flex: 1, color: c.ink }}>{it.name}</span>
-                  <input
-                    type="number"
-                    value={it.qty}
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) => updateReturnQty(i, Number(e.target.value) || 1)}
-                    style={{ width: 60, textAlign: "right", padding: "3px 6px", borderRadius: 5, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12 }}
-                  />
+                  <div style={{ width: 60 }}>
+                    <input
+                      type="number"
+                      value={it.qty}
+                      max={it.maxQty}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => updateReturnQty(i, Number(e.target.value) || 1)}
+                      style={{ width: 60, textAlign: "right", padding: "3px 6px", borderRadius: 5, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12 }}
+                    />
+                    <div style={{ textAlign: "right", fontSize: 10, color: c.steelLight, marginTop: 2 }}>из {it.maxQty}</div>
+                  </div>
                   <span style={{ width: 90, textAlign: "right", fontFamily: monoFont }}>{it.price.toLocaleString("ru-RU")}</span>
                   <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontWeight: 600 }}>{(it.qty * it.price).toLocaleString("ru-RU")}</span>
                   <button onClick={() => removeReturnItem(i)} style={{ width: 20, background: "none", border: "none", color: c.steelLight, cursor: "pointer" }}>
