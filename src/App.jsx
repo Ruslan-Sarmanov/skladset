@@ -1512,7 +1512,7 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
     setRows(null);
     try {
       const filter = query.trim()
-        ? `&or=(sku.ilike.*${encodeURIComponent(query)}*,name.ilike.*${encodeURIComponent(query)}*)`
+        ? `&or=(sku.ilike.*${encodeURIComponent(query)}*,name.ilike.*${encodeURIComponent(query)}*,alt_sku.ilike.*${encodeURIComponent(query)}*)`
         : "";
       const data = await db("network_stock", { query: `?select=*${filter}&order=shop_name.asc&limit=200`, session });
       setRows(data);
@@ -1584,13 +1584,19 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && search()}
-          placeholder="Артикул или название детали…"
+          placeholder="Артикул, аналог или название детали…"
           style={{ ...inputStyle, flex: 1 }}
         />
         <button onClick={search} style={primaryBtn}>
           Найти
         </button>
       </div>
+
+      {rows && rows.length > 0 && (
+        <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginBottom: 10 }}>
+          Ваш склад показан первым и подсвечен — ниже магазины сети, открывшие доступ. Найдено {rows.length} позиций.
+        </div>
+      )}
 
       {rows === null && (
         <div style={{ display: "flex", gap: 8, color: c.steel, fontSize: 13, padding: 12 }}>
@@ -1607,11 +1613,12 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
       {rows && rows.length > 0 && (
         <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
           <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
-            <span style={{ width: 120 }}>Артикул</span>
-            <span style={{ flex: 1 }}>Наименование</span>
-            <span style={{ width: 180 }}>Склад / магазин</span>
+            <span style={{ width: 120, textAlign: "left" }}>Артикул</span>
+            <span style={{ width: 100, textAlign: "left" }}>Субс / аналог</span>
+            <span style={{ flex: 1, textAlign: "left" }}>Наименование</span>
+            <span style={{ width: 170 }}>Склад / магазин</span>
             <span style={{ width: 60, textAlign: "right" }}>Кол.</span>
-            <span style={{ width: 90, textAlign: "right" }}>Цена</span>
+            <span style={{ width: 100, textAlign: "right" }}>Цена</span>
             <span style={{ width: 90 }} />
           </div>
           {[...own, ...others].map((r, i) => (
@@ -1628,13 +1635,14 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
                 background: r.shop_id === shop.id ? "#FDF6EA" : "#fff",
               }}
             >
-              <span style={{ width: 120, fontFamily: monoFont, fontWeight: 700, color: c.ink }}>{r.sku}</span>
-              <span style={{ flex: 1, color: c.ink }}>{r.name}</span>
-              <span style={{ width: 180, color: r.shop_id === shop.id ? c.ink : c.steel, fontWeight: r.shop_id === shop.id ? 600 : 400 }}>
+              <span style={{ width: 120, textAlign: "left", fontFamily: monoFont, fontWeight: 700, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.sku}</span>
+              <span style={{ width: 100, textAlign: "left", fontFamily: monoFont, fontSize: 12, color: c.steel, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.alt_sku || "—"}</span>
+              <span style={{ flex: 1, textAlign: "left", color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{r.name}</span>
+              <span style={{ width: 170, color: r.shop_id === shop.id ? c.ink : c.steel, fontWeight: r.shop_id === shop.id ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {r.shop_id === shop.id ? `Ваш склад — ${r.shop_name}` : r.shop_name}
               </span>
               <span style={{ width: 60, textAlign: "right", fontFamily: monoFont }}>{r.qty}</span>
-              <span style={{ width: 90, textAlign: "right", fontFamily: monoFont, fontWeight: 700, color: c.amberDark }}>{r.price.toLocaleString("ru-RU")}</span>
+              <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontWeight: 700, color: c.amberDark }}>{r.price.toLocaleString("ru-RU")} ₸</span>
               <span style={{ width: 90, textAlign: "right" }}>
                 {r.shop_id !== shop.id && (
                   <button
