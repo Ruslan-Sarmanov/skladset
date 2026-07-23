@@ -432,14 +432,6 @@ function ItemForm({ initial, onSave, onDelete, onCancel, brands }) {
         <Field label="Артикул">
           <input placeholder="Например, 90915-YZZD4" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} style={inputStyle} />
         </Field>
-        <Field label="Субс / аналог">
-          <input placeholder="Необязательно" value={form.alt_sku} onChange={(e) => setForm({ ...form, alt_sku: e.target.value })} style={inputStyle} />
-        </Field>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
-        <Field label="Наименование">
-          <input placeholder="Например, Масляный фильтр" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inputStyle} />
-        </Field>
         <Field label="Бренд">
           <input
             list="brand-options"
@@ -454,8 +446,18 @@ function ItemForm({ initial, onSave, onDelete, onCancel, brands }) {
             ))}
           </datalist>
         </Field>
-        <Field label="Модель">
-          <input placeholder="Например, Camry" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} style={inputStyle} />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <Field label="Субс / аналог">
+          <input placeholder="Необязательно" value={form.alt_sku} onChange={(e) => setForm({ ...form, alt_sku: e.target.value })} style={inputStyle} />
+        </Field>
+        <Field label="Наименование">
+          <input placeholder="Например, Масляный фильтр" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inputStyle} />
+        </Field>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, marginBottom: 10, maxWidth: "50%" }}>
+        <Field label="Модель (необязательно)">
+          <input placeholder="Например, Camry — если подходит на несколько, через запятую" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} style={inputStyle} />
         </Field>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
@@ -1677,7 +1679,7 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
             <span onClick={() => toggleSort("price")} style={{ width: 100, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
               Цена {sortArrow("price")}
             </span>
-            <span style={{ width: 160, textAlign: "left" }}>Магазин</span>
+            <span style={{ width: 170, textAlign: "left" }}>Магазин</span>
           </div>
           {displayRows.map((r, i) => (
             <div
@@ -1699,29 +1701,39 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
               <span style={{ flex: 1, textAlign: "left", color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{r.name}</span>
               <span style={{ width: 60, textAlign: "right", fontFamily: monoFont }}>{r.qty}</span>
               <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontWeight: 700, color: c.amberDark }}>{r.price.toLocaleString("ru-RU")} ₸</span>
-              <span style={{ width: 160, textAlign: "left" }}>
-                {r.shop_id === shop.id ? (
-                  <span style={{ color: c.ink, fontWeight: 600 }}>Ваш склад</span>
-                ) : (
+              <span style={{ width: 170, textAlign: "left", display: "flex", alignItems: "center", gap: 6 }}>
+                <span
+                  style={{
+                    color: r.shop_id === shop.id ? c.ink : c.steel,
+                    fontWeight: r.shop_id === shop.id ? 600 : 500,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  {r.shop_id === shop.id ? "Ваш склад" : r.shop_name}
+                </span>
+                {r.shop_id !== shop.id && (
                   <button
                     onClick={() => setContact({ shopName: r.shop_name, phones: r.shop_phones, address: r.shop_address })}
+                    title="Контакты магазина"
                     style={{
+                      width: 24,
+                      height: 24,
+                      flexShrink: 0,
+                      borderRadius: "50%",
                       border: `1px solid ${c.border}`,
                       background: "transparent",
-                      borderRadius: 6,
-                      padding: "4px 9px",
-                      fontFamily: bodyFont,
-                      fontSize: 11.5,
-                      fontWeight: 600,
-                      color: c.ink,
                       cursor: "pointer",
-                      maxWidth: "100%",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 12,
                     }}
                   >
-                    {r.shop_name}
+                    ☎
                   </button>
                 )}
               </span>
@@ -2439,7 +2451,6 @@ function StockScreen({ session, shop }) {
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
-  const [showPurchase, setShowPurchase] = useState(false);
   const [markupPct, setMarkupPct] = useState("");
   const [printPreviewOpen, setPrintPreviewOpen] = useState(false);
   const [networkBrands, setNetworkBrands] = useState([]);
@@ -2862,27 +2873,6 @@ function StockScreen({ session, shop }) {
 
       <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск по артикулу, субс/аналогу, названию, бренду или модели…" style={{ ...inputStyle, flex: 1 }} />
-        <button
-          onClick={() => setShowPurchase(!showPurchase)}
-          title={showPurchase ? "Скрыть закупочную цену" : "Показать закупочную цену"}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            background: showPurchase ? c.cloud : "transparent",
-            border: `1px solid ${c.border}`,
-            borderRadius: 8,
-            padding: "0 14px",
-            fontFamily: bodyFont,
-            fontWeight: 600,
-            fontSize: 12.5,
-            cursor: "pointer",
-            color: c.steel,
-            whiteSpace: "nowrap",
-          }}
-        >
-          {showPurchase ? "🙈 Скрыть закуп" : "👁 Показать закуп"}
-        </button>
       </div>
 
       <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
@@ -2890,27 +2880,24 @@ function StockScreen({ session, shop }) {
           <span onClick={() => toggleSort("brand")} style={{ width: 90, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center" }}>
             Бренд {sortArrow("brand")}
           </span>
-          <span onClick={() => toggleSort("sku")} style={{ width: 120, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center" }}>
+          <span onClick={() => toggleSort("sku")} style={{ width: 130, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center" }}>
             Артикул {sortArrow("sku")}
           </span>
-          <span onClick={() => toggleSort("alt_sku")} style={{ width: 100, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center" }}>
-            Субс / аналог {sortArrow("alt_sku")}
+          <span onClick={() => toggleSort("alt_sku")} style={{ width: 110, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", whiteSpace: "nowrap" }}>
+            Субс/аналог {sortArrow("alt_sku")}
           </span>
           <span onClick={() => toggleSort("name")} style={{ flex: 1, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center" }}>
             Наименование {sortArrow("name")}
           </span>
-          <span style={{ width: 90 }}>Модель</span>
+          <span style={{ width: 90, display: "flex", alignItems: "center" }}>Модель</span>
           <span onClick={() => toggleSort("qty")} style={{ width: 60, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
             Кол. {sortArrow("qty")}
           </span>
-          <span onClick={() => toggleSort("price")} style={{ width: 84, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+          <span onClick={() => toggleSort("price")} style={{ width: 90, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
             Цена {sortArrow("price")}
           </span>
-          <span onClick={() => toggleSort("purchase_price")} style={{ width: 84, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
-            Закуп {sortArrow("purchase_price")}
-          </span>
-          <span style={{ width: 24 }} />
-          <span style={{ width: 28 }} />
+          <span style={{ width: 24, flexShrink: 0 }} />
+          <span style={{ width: 28, flexShrink: 0 }} />
         </div>
 
         {items === null && (
@@ -2940,17 +2927,14 @@ function StockScreen({ session, shop }) {
               fontSize: 13,
             }}
           >
-            <span style={{ width: 90, color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.brand || "—"}</span>
-            <span style={{ width: 120, fontFamily: monoFont, fontWeight: 600, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.sku}</span>
-            <span style={{ width: 100, fontFamily: monoFont, fontSize: 12, color: c.steel, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.alt_sku || "—"}</span>
+            <span style={{ width: 90, flexShrink: 0, color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.brand || "—"}</span>
+            <span style={{ width: 130, flexShrink: 0, fontFamily: monoFont, fontWeight: 600, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.sku}</span>
+            <span style={{ width: 110, flexShrink: 0, fontFamily: monoFont, fontSize: 12, color: c.steel, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.alt_sku || "—"}</span>
             <span style={{ flex: 1, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{it.name}</span>
-            <span style={{ width: 90, color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.model}</span>
-            <span style={{ width: 60, textAlign: "right", fontFamily: monoFont, fontWeight: 600, color: it.qty <= it.min_qty ? c.red : c.ink }}>{it.qty}</span>
-            <span style={{ width: 84, textAlign: "right", fontFamily: monoFont, color: c.amberDark, fontWeight: 700 }}>{it.price.toLocaleString("ru-RU")}</span>
-            <span style={{ width: 84, textAlign: "right", fontFamily: monoFont, color: c.steel, letterSpacing: showPurchase ? 0 : 1 }}>
-              {showPurchase ? it.purchase_price.toLocaleString("ru-RU") : "••••"}
-            </span>
-            <button onClick={() => setFormMode(it)} style={{ width: 24, background: "none", border: "none", color: c.steelLight, cursor: "pointer", padding: 0 }}>
+            <span style={{ width: 90, flexShrink: 0, color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.model || "—"}</span>
+            <span style={{ width: 60, flexShrink: 0, textAlign: "right", fontFamily: monoFont, fontWeight: 600, color: it.qty <= it.min_qty ? c.red : c.ink }}>{it.qty}</span>
+            <span style={{ width: 90, flexShrink: 0, textAlign: "right", fontFamily: monoFont, color: c.amberDark, fontWeight: 700 }}>{it.price.toLocaleString("ru-RU")} ₸</span>
+            <button onClick={() => setFormMode(it)} style={{ width: 24, flexShrink: 0, background: "none", border: "none", color: c.steelLight, cursor: "pointer", padding: 0 }}>
               <Icon size={13}>✎</Icon>
             </button>
             <button
