@@ -415,7 +415,7 @@ function Field({ label, children }) {
   );
 }
 
-function ItemForm({ initial, onSave, onDelete, onCancel }) {
+function ItemForm({ initial, onSave, onDelete, onCancel, brands }) {
   const empty = { sku: "", alt_sku: "", name: "", brand: "", model: "", qty: 0, price: 0, purchase_price: 0, min_qty: 5 };
   const [form, setForm] = useState(initial || empty);
   const valid = form.sku.trim() && form.name.trim();
@@ -441,7 +441,18 @@ function ItemForm({ initial, onSave, onDelete, onCancel }) {
           <input placeholder="Например, Масляный фильтр" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inputStyle} />
         </Field>
         <Field label="Бренд">
-          <input placeholder="Например, Denso" value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} style={inputStyle} />
+          <input
+            list="brand-options"
+            placeholder="Начните вводить — предложит уже существующие"
+            value={form.brand}
+            onChange={(e) => setForm({ ...form, brand: e.target.value })}
+            style={inputStyle}
+          />
+          <datalist id="brand-options">
+            {(brands || []).map((b) => (
+              <option key={b} value={b} />
+            ))}
+          </datalist>
         </Field>
         <Field label="Модель">
           <input placeholder="Например, Camry" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} style={inputStyle} />
@@ -1656,18 +1667,17 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
       {rows && rows.length > 0 && (
         <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
           <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+            <span style={{ width: 90, textAlign: "left" }}>Бренд</span>
             <span style={{ width: 120, textAlign: "left" }}>Артикул</span>
             <span style={{ width: 100, textAlign: "left" }}>Субс / аналог</span>
             <span style={{ flex: 1, textAlign: "left" }}>Наименование</span>
-            <span style={{ width: 90, textAlign: "left" }}>Бренд</span>
-            <span style={{ width: 170 }}>Склад / магазин</span>
             <span onClick={() => toggleSort("qty")} style={{ width: 60, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
               Кол. {sortArrow("qty")}
             </span>
             <span onClick={() => toggleSort("price")} style={{ width: 100, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
               Цена {sortArrow("price")}
             </span>
-            <span style={{ width: 90 }} />
+            <span style={{ width: 160, textAlign: "left" }}>Магазин</span>
           </div>
           {displayRows.map((r, i) => (
             <div
@@ -1683,22 +1693,35 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
                 background: r.shop_id === shop.id ? "#FDF6EA" : "#fff",
               }}
             >
+              <span style={{ width: 90, textAlign: "left", color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.brand || "—"}</span>
               <span style={{ width: 120, textAlign: "left", fontFamily: monoFont, fontWeight: 700, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.sku}</span>
               <span style={{ width: 100, textAlign: "left", fontFamily: monoFont, fontSize: 12, color: c.steel, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.alt_sku || "—"}</span>
               <span style={{ flex: 1, textAlign: "left", color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{r.name}</span>
-              <span style={{ width: 90, textAlign: "left", color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.brand || "—"}</span>
-              <span style={{ width: 170, color: r.shop_id === shop.id ? c.ink : c.steel, fontWeight: r.shop_id === shop.id ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {r.shop_id === shop.id ? `Ваш склад — ${r.shop_name}` : r.shop_name}
-              </span>
               <span style={{ width: 60, textAlign: "right", fontFamily: monoFont }}>{r.qty}</span>
               <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontWeight: 700, color: c.amberDark }}>{r.price.toLocaleString("ru-RU")} ₸</span>
-              <span style={{ width: 90, textAlign: "right" }}>
-                {r.shop_id !== shop.id && (
+              <span style={{ width: 160, textAlign: "left" }}>
+                {r.shop_id === shop.id ? (
+                  <span style={{ color: c.ink, fontWeight: 600 }}>Ваш склад</span>
+                ) : (
                   <button
                     onClick={() => setContact({ shopName: r.shop_name, phones: r.shop_phones, address: r.shop_address })}
-                    style={{ border: `1px solid ${c.border}`, background: "transparent", borderRadius: 6, padding: "4px 9px", fontFamily: bodyFont, fontSize: 11.5, fontWeight: 600, color: c.ink, cursor: "pointer" }}
+                    style={{
+                      border: `1px solid ${c.border}`,
+                      background: "transparent",
+                      borderRadius: 6,
+                      padding: "4px 9px",
+                      fontFamily: bodyFont,
+                      fontSize: 11.5,
+                      fontWeight: 600,
+                      color: c.ink,
+                      cursor: "pointer",
+                      maxWidth: "100%",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
                   >
-                    Контакты
+                    {r.shop_name}
                   </button>
                 )}
               </span>
@@ -2419,6 +2442,7 @@ function StockScreen({ session, shop }) {
   const [showPurchase, setShowPurchase] = useState(false);
   const [markupPct, setMarkupPct] = useState("");
   const [printPreviewOpen, setPrintPreviewOpen] = useState(false);
+  const [networkBrands, setNetworkBrands] = useState([]);
 
   // ---- operation panel (Новая операция / Журнал продаж / Загрузка из Excel) ----
   const [opTab, setOpTab] = useState("new");
@@ -2462,9 +2486,18 @@ function StockScreen({ session, shop }) {
       setOpError(e.message);
     }
   }
+  async function loadNetworkBrands() {
+    try {
+      const rows = await db("network_stock", { query: `?select=brand`, session });
+      setNetworkBrands([...new Set(rows.map((r) => (r.brand || "").trim()).filter(Boolean))]);
+    } catch (e) {
+      // non-critical, ignore silently
+    }
+  }
   useEffect(() => {
     load();
     loadLog();
+    loadNetworkBrands();
     // eslint-disable-next-line
   }, [shop.id]);
 
@@ -2542,6 +2575,10 @@ function StockScreen({ session, shop }) {
     if (sortKey !== key) return <span style={{ opacity: 0.3, marginLeft: 4 }}>▲</span>;
     return <span style={{ marginLeft: 4 }}>{sortDir === "asc" ? "▲" : "▼"}</span>;
   }
+
+  const knownBrands = [
+    ...new Set([...(items || []).map((it) => (it.brand || "").trim()).filter(Boolean), ...networkBrands]),
+  ].sort((a, b) => a.localeCompare(b, "ru"));
 
   const filteredSorted = (items || [])
     .filter((it) => {
@@ -2785,8 +2822,8 @@ function StockScreen({ session, shop }) {
         </div>
       )}
 
-      {formMode === "new" && <ItemForm onSave={saveItem} onCancel={() => setFormMode(null)} />}
-      {formMode && formMode !== "new" && <ItemForm initial={formMode} onSave={saveItem} onDelete={deleteItem} onCancel={() => setFormMode(null)} />}
+      {formMode === "new" && <ItemForm onSave={saveItem} onCancel={() => setFormMode(null)} brands={knownBrands} />}
+      {formMode && formMode !== "new" && <ItemForm initial={formMode} onSave={saveItem} onDelete={deleteItem} onCancel={() => setFormMode(null)} brands={knownBrands} />}
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
         <span style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel }}>Наценка на весь ассортимент, %</span>
@@ -2850,6 +2887,9 @@ function StockScreen({ session, shop }) {
 
       <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 16px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600, letterSpacing: 0.2 }}>
+          <span onClick={() => toggleSort("brand")} style={{ width: 90, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center" }}>
+            Бренд {sortArrow("brand")}
+          </span>
           <span onClick={() => toggleSort("sku")} style={{ width: 120, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center" }}>
             Артикул {sortArrow("sku")}
           </span>
@@ -2858,9 +2898,6 @@ function StockScreen({ session, shop }) {
           </span>
           <span onClick={() => toggleSort("name")} style={{ flex: 1, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center" }}>
             Наименование {sortArrow("name")}
-          </span>
-          <span onClick={() => toggleSort("brand")} style={{ width: 90, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center" }}>
-            Бренд {sortArrow("brand")}
           </span>
           <span style={{ width: 90 }}>Модель</span>
           <span onClick={() => toggleSort("qty")} style={{ width: 60, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
@@ -2903,10 +2940,10 @@ function StockScreen({ session, shop }) {
               fontSize: 13,
             }}
           >
+            <span style={{ width: 90, color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.brand || "—"}</span>
             <span style={{ width: 120, fontFamily: monoFont, fontWeight: 600, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.sku}</span>
             <span style={{ width: 100, fontFamily: monoFont, fontSize: 12, color: c.steel, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.alt_sku || "—"}</span>
             <span style={{ flex: 1, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{it.name}</span>
-            <span style={{ width: 90, color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.brand || "—"}</span>
             <span style={{ width: 90, color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.model}</span>
             <span style={{ width: 60, textAlign: "right", fontFamily: monoFont, fontWeight: 600, color: it.qty <= it.min_qty ? c.red : c.ink }}>{it.qty}</span>
             <span style={{ width: 84, textAlign: "right", fontFamily: monoFont, color: c.amberDark, fontWeight: 700 }}>{it.price.toLocaleString("ru-RU")}</span>
