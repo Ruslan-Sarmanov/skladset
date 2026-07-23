@@ -1591,8 +1591,11 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
       ...skus.filter((s) => s !== primarySku).sort((a, b) => a.localeCompare(b, "ru")),
     ];
     const out = [];
-    orderedSkus.forEach((sku) => {
-      out.push(...[...groups[sku]].sort((a, b) => a.price - b.price));
+    orderedSkus.forEach((sku, groupIdx) => {
+      const sorted = [...groups[sku]].sort((a, b) => a.price - b.price);
+      sorted.forEach((r, idx) => {
+        out.push({ ...r, isAnalog: Boolean(primarySku) && sku !== primarySku, isGroupFirst: idx === 0, isFirstAnalogGroup: Boolean(primarySku) && sku !== primarySku && groupIdx === (primarySku ? 1 : 0) });
+      });
     });
     return out;
   }
@@ -1672,13 +1675,13 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
             <span style={{ width: 90, flexShrink: 0, textAlign: "left" }}>Бренд</span>
             <span style={{ width: 130, flexShrink: 0, textAlign: "left" }}>Артикул</span>
             <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>Наименование</span>
-            <span style={{ width: 190, flexShrink: 0, textAlign: "left" }}>Склад / магазин</span>
             <span onClick={() => toggleSort("qty")} style={{ width: 60, flexShrink: 0, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
               Кол. {sortArrow("qty")}
             </span>
             <span onClick={() => toggleSort("price")} style={{ width: 100, flexShrink: 0, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
               Цена, ₸ {sortArrow("price")}
             </span>
+            <span style={{ width: 190, flexShrink: 0, textAlign: "left" }}>Склад / магазин</span>
             <span style={{ width: 40, flexShrink: 0 }} />
           </div>
           {displayRows.map((r, i) => (
@@ -1689,7 +1692,7 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
                 alignItems: "center",
                 gap: 8,
                 padding: "9px 14px",
-                borderTop: i === 0 ? "none" : `1px solid ${c.border}`,
+                borderTop: i === 0 ? "none" : r.isFirstAnalogGroup && r.isGroupFirst ? `2px solid ${c.amberDark}` : `1px solid ${c.border}`,
                 fontFamily: bodyFont,
                 fontSize: 12.5,
                 background: r.shop_id === shop.id ? "#FDF6EA" : "#fff",
@@ -1697,7 +1700,30 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
             >
               <span style={{ width: 90, flexShrink: 0, textAlign: "left", color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.brand || "—"}</span>
               <span style={{ width: 130, flexShrink: 0, textAlign: "left", fontFamily: monoFont, fontWeight: 700, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.sku}</span>
-              <span title={r.name} style={{ flex: 1, textAlign: "left", color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{r.name}</span>
+              <span style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                <span title={r.name} style={{ color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+                  {r.name}
+                </span>
+                {r.isAnalog && r.isGroupFirst && (
+                  <span
+                    style={{
+                      flexShrink: 0,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: c.amberDark,
+                      background: "#FDF3E2",
+                      padding: "2px 6px",
+                      borderRadius: 4,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.03em",
+                    }}
+                  >
+                    Аналог
+                  </span>
+                )}
+              </span>
+              <span style={{ width: 60, flexShrink: 0, textAlign: "right", fontFamily: monoFont }}>{r.qty}</span>
+              <span style={{ width: 100, flexShrink: 0, textAlign: "right", fontFamily: monoFont, fontWeight: 700, color: c.amberDark }}>{r.price.toLocaleString("ru-RU")}</span>
               <span
                 style={{
                   width: 190,
@@ -1715,8 +1741,6 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
                   {r.shop_id === shop.id ? "Ваш склад" : r.shop_name}
                 </span>
               </span>
-              <span style={{ width: 60, flexShrink: 0, textAlign: "right", fontFamily: monoFont }}>{r.qty}</span>
-              <span style={{ width: 100, flexShrink: 0, textAlign: "right", fontFamily: monoFont, fontWeight: 700, color: c.amberDark }}>{r.price.toLocaleString("ru-RU")}</span>
               <span style={{ width: 40, flexShrink: 0, textAlign: "right" }}>
                 {r.shop_id !== shop.id && (
                   <button
