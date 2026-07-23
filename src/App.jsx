@@ -1147,6 +1147,614 @@ function OrdersScreen({ session, shop }) {
   );
 }
 
+const MONTHS_RU = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+function periodKey(dateIso, g) {
+  if (g === "day") return dateIso;
+  if (g === "month") return dateIso.slice(0, 7);
+  return dateIso.slice(0, 4);
+}
+function periodLabel(key, g) {
+  if (g === "day") return key;
+  if (g === "month") {
+    const [y, m] = key.split("-");
+    return `${MONTHS_RU[Number(m) - 1]} ${y}`;
+  }
+  return key;
+}
+
+function DateRangeRow({ dateFrom, setDateFrom, dateTo, setDateTo }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+      <span style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel }}>с</span>
+      <input
+        type="date"
+        value={dateFrom}
+        onChange={(e) => setDateFrom(e.target.value)}
+        style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12.5 }}
+      />
+      <span style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel }}>по</span>
+      <input
+        type="date"
+        value={dateTo}
+        onChange={(e) => setDateTo(e.target.value)}
+        style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12.5 }}
+      />
+      {(dateFrom || dateTo) && (
+        <button
+          onClick={() => {
+            setDateFrom("");
+            setDateTo("");
+          }}
+          style={{ background: "transparent", border: `1px solid ${c.border}`, borderRadius: 6, padding: "5px 10px", fontFamily: bodyFont, fontSize: 12, fontWeight: 600, color: c.ink, cursor: "pointer" }}
+        >
+          Показать всё
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SalesByPeriodReport({ salesLog }) {
+  const [g, setG] = useState("day");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const filteredLog = salesLog.filter((d) => (!dateFrom || d.date >= dateFrom) && (!dateTo || d.date <= dateTo));
+  const map = new Map();
+  filteredLog.forEach((d) => {
+    const key = periodKey(d.date, g);
+    if (!map.has(key)) map.set(key, { sales: 0, returns: 0, writeoff: 0, salesQty: 0 });
+    const row = map.get(key);
+    if (d.type === "Продажа") {
+      row.sales += d.sum;
+      row.salesQty += d.qty;
+    } else if (d.type === "Возврат от покупателя") {
+      row.returns += d.sum;
+    } else if (d.type === "Списание") {
+      row.writeoff += d.sum;
+    }
+  });
+  const rows = [...map.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1));
+
+  return (
+    <div>
+      <DateRangeRow dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} />
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        {[
+          { key: "day", label: "По дням" },
+          { key: "month", label: "По месяцам" },
+          { key: "year", label: "По годам" },
+        ].map((o) => (
+          <button
+            key={o.key}
+            onClick={() => setG(o.key)}
+            style={{
+              padding: "6px 12px",
+              borderRadius: 6,
+              border: `1px solid ${g === o.key ? c.amberDark : c.border}`,
+              background: g === o.key ? "#FDF3E2" : "#fff",
+              color: c.ink,
+              fontFamily: bodyFont,
+              fontWeight: 600,
+              fontSize: 12,
+              cursor: "pointer",
+            }}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+          <span style={{ width: 110 }}>Период</span>
+          <span style={{ width: 60, textAlign: "right" }}>Кол.</span>
+          <span style={{ flex: 1, textAlign: "right" }}>Продажи</span>
+          <span style={{ flex: 1, textAlign: "right" }}>Возвраты</span>
+          <span style={{ flex: 1, textAlign: "right" }}>Списания</span>
+          <span style={{ flex: 1, textAlign: "right" }}>Итого</span>
+        </div>
+        {rows.length === 0 && <div style={{ padding: 16, fontFamily: bodyFont, fontSize: 12.5, color: c.steel }}>Данных пока нет.</div>}
+        {rows.map(([key, row], i) => (
+          <div key={key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
+            <span style={{ width: 110, fontFamily: monoFont, color: c.ink }}>{periodLabel(key, g)}</span>
+            <span style={{ width: 60, textAlign: "right", fontFamily: monoFont }}>{row.salesQty}</span>
+            <span style={{ flex: 1, textAlign: "right", fontFamily: monoFont, color: c.green, fontWeight: 600 }}>{row.sales.toLocaleString("ru-RU")}</span>
+            <span style={{ flex: 1, textAlign: "right", fontFamily: monoFont, color: c.amberDark }}>{row.returns.toLocaleString("ru-RU")}</span>
+            <span style={{ flex: 1, textAlign: "right", fontFamily: monoFont, color: c.red }}>{row.writeoff.toLocaleString("ru-RU")}</span>
+            <span style={{ flex: 1, textAlign: "right", fontFamily: monoFont, fontWeight: 700, color: c.ink }}>
+              {(row.sales - row.returns - row.writeoff).toLocaleString("ru-RU")}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TopArticlesReport({ salesLog }) {
+  const [period, setPeriod] = useState("month");
+  const [q, setQ] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  const days = period === "week" ? 7 : period === "month" ? 30 : 365;
+  const threshold = new Date();
+  threshold.setDate(threshold.getDate() - days);
+  const thresholdIso = threshold.toISOString().slice(0, 10);
+  const useCustomRange = Boolean(dateFrom || dateTo);
+
+  const map = new Map();
+  salesLog
+    .filter((d) => {
+      if (d.type !== "Продажа") return false;
+      if (useCustomRange) return (!dateFrom || d.date >= dateFrom) && (!dateTo || d.date <= dateTo);
+      return d.date >= thresholdIso;
+    })
+    .forEach((d) => {
+      (d.items || []).forEach((it) => {
+        if (!map.has(it.sku)) map.set(it.sku, { sku: it.sku, name: it.name, qty: 0, sum: 0 });
+        const row = map.get(it.sku);
+        row.qty += it.qty;
+        row.sum += it.qty * it.price;
+      });
+    });
+  let rows = [...map.values()].sort((a, b) => b.qty - a.qty);
+  if (q.trim()) rows = rows.filter((r) => r.sku.toLowerCase().includes(q.toLowerCase()) || r.name.toLowerCase().includes(q.toLowerCase()));
+
+  return (
+    <div>
+      <DateRangeRow dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} />
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+        {[
+          { key: "week", label: "Неделя" },
+          { key: "month", label: "Месяц" },
+          { key: "year", label: "Год" },
+        ].map((o) => (
+          <button
+            key={o.key}
+            disabled={useCustomRange}
+            onClick={() => setPeriod(o.key)}
+            style={{
+              padding: "6px 12px",
+              borderRadius: 6,
+              border: `1px solid ${period === o.key && !useCustomRange ? c.amberDark : c.border}`,
+              background: period === o.key && !useCustomRange ? "#FDF3E2" : "#fff",
+              color: useCustomRange ? c.steelLight : c.ink,
+              fontFamily: bodyFont,
+              fontWeight: 600,
+              fontSize: 12,
+              cursor: useCustomRange ? "not-allowed" : "pointer",
+            }}
+          >
+            {o.label}
+          </button>
+        ))}
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Фильтр по артикулу"
+          style={{ marginLeft: "auto", padding: "6px 10px", borderRadius: 6, border: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}
+        />
+      </div>
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+          <span style={{ width: 24 }}>#</span>
+          <span style={{ width: 120 }}>Артикул</span>
+          <span style={{ flex: 1 }}>Наименование</span>
+          <span style={{ width: 70, textAlign: "right" }}>Продано</span>
+          <span style={{ width: 100, textAlign: "right" }}>Сумма</span>
+        </div>
+        {rows.length === 0 && <div style={{ padding: 16, fontFamily: bodyFont, fontSize: 12.5, color: c.steel }}>Продаж за этот период не найдено.</div>}
+        {rows.map((r, i) => (
+          <div key={r.sku} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
+            <span style={{ width: 24, fontFamily: monoFont, color: c.steel }}>{i + 1}</span>
+            <span style={{ width: 120, fontFamily: monoFont, color: c.ink, fontWeight: 600 }}>{r.sku}</span>
+            <span style={{ flex: 1, color: c.ink }}>{r.name}</span>
+            <span style={{ width: 70, textAlign: "right", fontFamily: monoFont, fontWeight: 700 }}>{r.qty}</span>
+            <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontWeight: 600 }}>{r.sum.toLocaleString("ru-RU")}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CashSummaryReport({ salesLog }) {
+  const methods = ["Наличные", "Безналичный (юрлицо)", "Терминал"];
+  const totals = { "Наличные": 0, "Безналичный (юрлицо)": 0, "Терминал": 0 };
+  const count = { "Наличные": 0, "Безналичный (юрлицо)": 0, "Терминал": 0 };
+  salesLog
+    .filter((d) => d.type === "Продажа" && d.payment_method)
+    .forEach((d) => {
+      totals[d.payment_method] = (totals[d.payment_method] || 0) + d.sum;
+      count[d.payment_method] = (count[d.payment_method] || 0) + 1;
+    });
+  const grandTotal = methods.reduce((s, m) => s + (totals[m] || 0), 0);
+
+  return (
+    <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+      {methods.map((m) => (
+        <div key={m} style={{ flex: "1 1 180px", background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 16 }}>
+          <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 6 }}>{m}</div>
+          <div style={{ fontFamily: displayFont, fontSize: 22, fontWeight: 700, color: c.ink }}>{(totals[m] || 0).toLocaleString("ru-RU")} ₸</div>
+          <div style={{ fontFamily: bodyFont, fontSize: 11.5, color: c.steel, marginTop: 4 }}>{count[m] || 0} продаж(и)</div>
+        </div>
+      ))}
+      <div style={{ flex: "1 1 180px", background: c.ink, borderRadius: 10, padding: 16 }}>
+        <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: "#B8C0CC", marginBottom: 6 }}>Итого по всем способам</div>
+        <div style={{ fontFamily: displayFont, fontSize: 22, fontWeight: 700, color: "#fff" }}>{grandTotal.toLocaleString("ru-RU")} ₸</div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Manage cash ledger categories (Приход / Расход) ----
+function CashCategoryModal({ session, shop, categories, onCategoriesChanged, type, onClose, onSelect }) {
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [error, setError] = useState("");
+
+  async function addCategory() {
+    if (!newName.trim()) return;
+    try {
+      await db("cash_categories", { method: "POST", body: { shop_id: shop.id, name: newName.trim(), type }, session, prefer: "return=minimal" });
+      setNewName("");
+      setAdding(false);
+      onCategoriesChanged();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  async function deleteCategory(id) {
+    try {
+      await db("cash_categories", { method: "DELETE", query: `?id=eq.${id}`, session, prefer: "return=minimal" });
+      onCategoriesChanged();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  const filtered = categories.filter((cat) => cat.type === type);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(28,33,40,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: c.panel, borderRadius: 12, width: 380, maxHeight: "80vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${c.border}` }}>
+          <span style={{ fontFamily: displayFont, fontSize: 15, fontWeight: 600, color: c.ink }}>Статьи «{type}»</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: c.steel }}>
+            <Icon size={17}>✕</Icon>
+          </button>
+        </div>
+        <div style={{ padding: 18 }}>
+          {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "8px 10px", fontSize: 12, marginBottom: 10 }}>{error}</div>}
+          {filtered.length === 0 && <div style={{ color: c.steel, fontSize: 13, marginBottom: 12 }}>Статей пока нет.</div>}
+          {filtered.map((cat, i) => (
+            <div key={cat.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderTop: i === 0 ? "none" : `1px solid ${c.border}` }}>
+              <span onClick={() => onSelect && onSelect(cat)} style={{ flex: 1, fontFamily: bodyFont, fontSize: 13, color: c.ink, cursor: onSelect ? "pointer" : "default" }}>
+                {cat.name}
+              </span>
+              <button onClick={() => deleteCategory(cat.id)} style={{ background: "none", border: "none", color: c.steelLight, cursor: "pointer" }}>
+                ✕
+              </button>
+            </div>
+          ))}
+          {adding ? (
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Название статьи" style={{ ...inputStyle, flex: 1 }} onKeyDown={(e) => e.key === "Enter" && addCategory()} />
+              <button onClick={addCategory} style={primaryBtn}>
+                +
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setAdding(true)}
+              style={{ marginTop: 12, background: c.cloud, border: `1px solid ${c.border}`, borderRadius: 8, padding: "8px 14px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, color: c.ink, cursor: "pointer" }}
+            >
+              + Новая статья
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CashLedgerReport({ session, shop, salesLog }) {
+  const [formType, setFormType] = useState(null); // null | "Приход" | "Расход"
+  const [sum, setSum] = useState("");
+  const [category, setCategory] = useState("");
+  const [comment, setComment] = useState("");
+  const [categoryModalType, setCategoryModalType] = useState(null);
+  const [dateFrom, setDateFrom] = useState(todayISO());
+  const [dateTo, setDateTo] = useState(todayISO());
+  const [cashLedger, setCashLedgerState] = useState(null);
+  const [cashCategories, setCashCategories] = useState([]);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function loadLedger() {
+    try {
+      const rows = await db("cash_ledger", { query: `?shop_id=eq.${shop.id}&order=date.desc,created_at.desc`, session });
+      setCashLedgerState(rows);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  async function loadCategories() {
+    try {
+      const rows = await db("cash_categories", { query: `?shop_id=eq.${shop.id}&order=name.asc`, session });
+      setCashCategories(rows);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  useEffect(() => {
+    loadLedger();
+    loadCategories();
+    // eslint-disable-next-line
+  }, [shop.id]);
+
+  const auto = salesLog
+    .filter((d) => (d.type === "Продажа" && d.payment_method === "Наличные") || d.type === "Возврат от покупателя")
+    .map((d) => ({
+      id: `auto-${d.id}`,
+      date: d.date,
+      type: d.type === "Продажа" ? "Приход" : "Расход",
+      sum: d.sum,
+      category: d.type === "Продажа" ? "Продажа (наличные)" : "Возврат покупателю",
+      comment: d.counterparty_name,
+    }));
+  const manual = cashLedger || [];
+  const all = [...auto, ...manual].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const balance = all.reduce((s, e) => s + (e.type === "Приход" ? e.sum : -e.sum), 0);
+  const filteredAll = all.filter((e) => (!dateFrom || e.date >= dateFrom) && (!dateTo || e.date <= dateTo));
+
+  function openForm(type) {
+    setFormType(type);
+    setSum("");
+    setCategory("");
+    setComment("");
+  }
+  async function submit() {
+    const n = Number(sum);
+    if (!n || !category) return;
+    setSaving(true);
+    setError("");
+    try {
+      await db("cash_ledger", {
+        method: "POST",
+        body: { shop_id: shop.id, type: formType, sum: n, category, comment, date: todayISO() },
+        session,
+        prefer: "return=minimal",
+      });
+      setFormType(null);
+      loadLedger();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: "12px 18px" }}>
+          <div style={{ fontFamily: bodyFont, fontSize: 11.5, color: c.steel }}>Остаток в кассе</div>
+          <div style={{ fontFamily: displayFont, fontSize: 20, fontWeight: 700, color: c.ink }}>{balance.toLocaleString("ru-RU")} ₸</div>
+        </div>
+        <button
+          onClick={() => openForm("Приход")}
+          style={{ display: "flex", alignItems: "center", gap: 6, background: c.greenBg, color: c.green, border: "none", borderRadius: 8, padding: "9px 14px", fontFamily: bodyFont, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}
+        >
+          + Приход
+        </button>
+        <button
+          onClick={() => openForm("Расход")}
+          style={{ display: "flex", alignItems: "center", gap: 6, background: c.redBg, color: c.red, border: "none", borderRadius: 8, padding: "9px 14px", fontFamily: bodyFont, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}
+        >
+          − Расход
+        </button>
+      </div>
+
+      {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
+
+      {formType && (
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 16, marginBottom: 16, maxWidth: 420 }}>
+          <div style={{ fontFamily: displayFont, fontSize: 14, fontWeight: 600, color: c.ink, marginBottom: 10 }}>Новый «{formType}»</div>
+          <div style={{ marginBottom: 10 }}>
+            <label style={fieldLabel}>Сумма, ₸</label>
+            <input type="number" value={sum} onFocus={(e) => e.target.select()} onChange={(e) => setSum(e.target.value)} style={inputStyle} />
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <label style={fieldLabel}>Статья</label>
+            <select
+              value={category}
+              onChange={(e) => {
+                if (e.target.value === "__manage__") setCategoryModalType(formType);
+                else setCategory(e.target.value);
+              }}
+              style={inputStyle}
+            >
+              <option value="">Не выбрана</option>
+              {cashCategories
+                .filter((cat) => cat.type === formType)
+                .map((cat) => (
+                  <option key={cat.id} value={cat.name}>
+                    {cat.name}
+                  </option>
+                ))}
+              <option value="__manage__">+ Управление статьями…</option>
+            </select>
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <label style={fieldLabel}>Комментарий</label>
+            <input value={comment} onChange={(e) => setComment(e.target.value)} style={inputStyle} />
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
+            <button onClick={() => setFormType(null)} style={{ background: "transparent", color: c.ink, border: `1px solid ${c.border}`, borderRadius: 8, padding: "8px 14px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, cursor: "pointer" }}>
+              Отмена
+            </button>
+            <button
+              onClick={submit}
+              disabled={!sum || !category || saving}
+              style={{ background: sum && category ? c.amber : c.border, color: sum && category ? c.ink : c.steelLight, border: "none", borderRadius: 8, padding: "8px 16px", fontFamily: bodyFont, fontWeight: 700, fontSize: 12.5, cursor: sum && category ? "pointer" : "not-allowed" }}
+            >
+              {saving ? <Spinner /> : "Сохранить"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <DateRangeRow dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} />
+
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+          <span style={{ width: 80 }}>Дата</span>
+          <span style={{ width: 90 }}>Тип</span>
+          <span style={{ width: 140 }}>Статья</span>
+          <span style={{ flex: 1 }}>Комментарий</span>
+          <span style={{ width: 100, textAlign: "right" }}>Сумма</span>
+        </div>
+        {cashLedger === null && (
+          <div style={{ display: "flex", gap: 8, padding: 20, color: c.steel, fontSize: 13 }}>
+            <Spinner /> Загружаю кассу…
+          </div>
+        )}
+        {cashLedger !== null && filteredAll.length === 0 && <div style={{ padding: 16, fontFamily: bodyFont, fontSize: 12.5, color: c.steel }}>Движений по кассе за выбранный период нет.</div>}
+        {filteredAll.map((e, i) => (
+          <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
+            <span style={{ width: 80, fontFamily: monoFont, color: c.steel }}>{e.date}</span>
+            <span style={{ width: 90, fontWeight: 700, color: e.type === "Приход" ? c.green : c.red }}>{e.type}</span>
+            <span style={{ width: 140, color: c.ink }}>{e.category}</span>
+            <span style={{ flex: 1, color: c.steel, fontSize: 11.5 }}>{e.comment || "—"}</span>
+            <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontWeight: 600, color: e.type === "Приход" ? c.green : c.red }}>
+              {e.type === "Приход" ? "+" : "−"}
+              {e.sum.toLocaleString("ru-RU")}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {categoryModalType && (
+        <CashCategoryModal
+          session={session}
+          shop={shop}
+          categories={cashCategories}
+          onCategoriesChanged={loadCategories}
+          type={categoryModalType}
+          onClose={() => setCategoryModalType(null)}
+          onSelect={(cat) => {
+            setCategory(cat.name);
+            setCategoryModalType(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ReportsScreen({ session, shop }) {
+  const [tab, setTab] = useState("sales");
+  const [skuQuery, setSkuQuery] = useState("");
+  const [salesLog, setSalesLog] = useState(null);
+  const [error, setError] = useState("");
+
+  async function load() {
+    setError("");
+    try {
+      const rows = await db("sales_log", { query: `?shop_id=eq.${shop.id}&order=date.desc,created_at.desc`, session });
+      setSalesLog(rows);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line
+  }, [shop.id]);
+
+  if (salesLog === null) {
+    return (
+      <div style={{ display: "flex", gap: 8, color: c.steel, fontSize: 13, padding: 12 }}>
+        <Spinner /> Загружаю отчёты…
+      </div>
+    );
+  }
+
+  const skuResults = skuQuery.trim() ? salesLog.filter((d) => (d.items || []).some((it) => it.sku.toLowerCase().includes(skuQuery.toLowerCase()))) : null;
+
+  return (
+    <div>
+      <div style={{ fontFamily: displayFont, fontSize: 20, fontWeight: 600, color: c.ink, marginBottom: 14 }}>Отчёты</div>
+
+      {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
+
+      <input
+        value={skuQuery}
+        onChange={(e) => setSkuQuery(e.target.value)}
+        placeholder="Поиск по артикулу — во всех продажах и возвратах"
+        style={{ ...inputStyle, maxWidth: 380, marginBottom: 16 }}
+      />
+
+      {skuResults ? (
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
+          <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+            <span style={{ width: 80 }}>Дата</span>
+            <span style={{ width: 150 }}>Тип</span>
+            <span style={{ flex: 1 }}>Контрагент</span>
+            <span style={{ width: 50, textAlign: "right" }}>Кол.</span>
+            <span style={{ width: 90, textAlign: "right" }}>Сумма</span>
+          </div>
+          {skuResults.length === 0 && <div style={{ padding: 16, fontFamily: bodyFont, fontSize: 12.5, color: c.steel }}>Совпадений не найдено.</div>}
+          {skuResults.map((d, i) => (
+            <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
+              <span style={{ width: 80, fontFamily: monoFont, color: c.steel }}>{d.date}</span>
+              <span style={{ width: 150, fontWeight: 600, color: c.ink }}>{d.type}</span>
+              <span style={{ flex: 1, color: c.ink }}>{d.counterparty_name}</span>
+              <span style={{ width: 50, textAlign: "right", fontFamily: monoFont }}>{d.qty}</span>
+              <span style={{ width: 90, textAlign: "right", fontFamily: monoFont, fontWeight: 600 }}>{d.sum.toLocaleString("ru-RU")}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <>
+          <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+            {[
+              { key: "sales", label: "По периодам" },
+              { key: "items", label: "По артикулам" },
+              { key: "cash", label: "Продажи" },
+              { key: "cashOnly", label: "Касса (наличка)" },
+            ].map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 8,
+                  border: `1px solid ${tab === t.key ? c.amberDark : c.border}`,
+                  background: tab === t.key ? "#FDF3E2" : "#fff",
+                  color: c.ink,
+                  fontFamily: bodyFont,
+                  fontWeight: 600,
+                  fontSize: 12.5,
+                  cursor: "pointer",
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {tab === "sales" && <SalesByPeriodReport salesLog={salesLog} />}
+          {tab === "items" && <TopArticlesReport salesLog={salesLog} />}
+          {tab === "cash" && <CashSummaryReport salesLog={salesLog} />}
+          {tab === "cashOnly" && <CashLedgerReport session={session} shop={shop} salesLog={salesLog} />}
+        </>
+      )}
+    </div>
+  );
+}
+
 function ContactsScreen({ session, shop }) {
   const emptyForm = { kind: "Физлицо", category: "", name: "", full_name: "", phone1: "", phone2: "", phone3: "", email: "", bin: "", address: "", legal_address: "", actual_address: "", comment: "" };
   const [list, setList] = useState(null);
@@ -3499,13 +4107,19 @@ export default function App() {
           <Icon size={17}>🛒</Icon> Заказы
         </div>
         <div
+          onClick={() => setTab("reports")}
+          style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "reports" ? c.amber : "transparent", color: tab === "reports" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
+        >
+          <Icon size={17}>📈</Icon> Отчёты
+        </div>
+        <div
           onClick={() => setTab("settings")}
           style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "settings" ? c.amber : "transparent", color: tab === "settings" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
         >
           <Icon size={17}>⚙️</Icon> Настройки
         </div>
         <div style={{ marginTop: "auto", padding: "10px 14px", fontSize: 11, color: c.steelLight, fontFamily: bodyFont }}>
-          Остальные разделы (документы, отчёты) подключим следующими.
+          Остальные разделы (документы) подключим следующими.
         </div>
         <button
           onClick={() => {
@@ -3524,6 +4138,7 @@ export default function App() {
         {tab === "network" && <NetworkSearchScreen session={session} shop={shop} onShopUpdate={setShop} />}
         {tab === "contacts" && <ContactsScreen session={session} shop={shop} />}
         {tab === "orders" && <OrdersScreen session={session} shop={shop} />}
+        {tab === "reports" && <ReportsScreen session={session} shop={shop} />}
         {tab === "settings" && <SettingsScreen session={session} shop={shop} onShopUpdate={setShop} />}
       </main>
     </div>
