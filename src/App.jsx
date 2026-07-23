@@ -1678,12 +1678,21 @@ function matchColumn(header) {
 function ReturnSourceModal({ salesLog, cartSkus, onSelect, onClose }) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [query, setQuery] = useState("");
 
   const candidates = (salesLog || []).filter((d) => {
     if (d.type !== "Продажа") return false;
     if (dateFrom && d.date < dateFrom) return false;
     if (dateTo && d.date > dateTo) return false;
-    return (d.items || []).some((it) => cartSkus.includes(it.sku));
+    if (cartSkus && cartSkus.length > 0 && !(d.items || []).some((it) => cartSkus.includes(it.sku))) return false;
+    if (query.trim()) {
+      const q = query.toLowerCase();
+      const matchesName = d.counterparty_name.toLowerCase().includes(q);
+      const matchesDoc = d.doc_number.toLowerCase().includes(q);
+      const matchesSku = (d.items || []).some((it) => it.sku.toLowerCase().includes(q));
+      if (!matchesName && !matchesDoc && !matchesSku) return false;
+    }
+    return true;
   });
 
   return (
@@ -1697,8 +1706,16 @@ function ReturnSourceModal({ salesLog, cartSkus, onSelect, onClose }) {
         </div>
         <div style={{ padding: 18 }}>
           <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 10 }}>
-            Показаны продажи, где встречается хотя бы одна из позиций текущей операции.
+            {cartSkus && cartSkus.length > 0
+              ? "Показаны продажи, где встречается хотя бы одна из позиций текущей операции."
+              : "Найдите продажу по контрагенту, номеру или артикулу — количество и цена возврата будут взяты из неё."}
           </div>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Контрагент, № продажи или артикул…"
+            style={{ ...inputStyle, marginBottom: 10 }}
+          />
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
             <span style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel }}>с</span>
             <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ padding: "5px 8px", borderRadius: 6, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12 }} />
@@ -2512,15 +2529,15 @@ function StockScreen({ session, shop }) {
   }
 
   function startPost(type) {
-    if (cart.length === 0) return;
     setOpError("");
+    if (type === "Возврат от покупателя") {
+      setPostFlow({ type, step: "returnSource" });
+      return;
+    }
+    if (cart.length === 0) return;
     if ((type === "Продажа" || type === "Списание") && !checkStockAvailability()) return;
     if (type === "Списание") {
       commit(type, null, null);
-      return;
-    }
-    if (type === "Возврат от покупателя") {
-      setPostFlow({ type, step: "returnSource" });
       return;
     }
     setPostFlow({ type, step: "counterparty" });
@@ -2532,10 +2549,69 @@ function StockScreen({ session, shop }) {
   }
   function handleReturnSourceSelected(sale) {
     const cp = { id: sale.counterparty_id, name: sale.counterparty_name, kind: sale.counterparty_kind };
-    commit("Возврат от покупателя", cp, null);
+    // How much of each sku from this exact sale was already returned before.
+    const returned = {};
+    (salesLog || []).forEach((d) => {
+      if (d.type === "Возврат от покупателя" && d.comment && d.comment.startsWith(`Возврат по продаже ${sale.doc_number}`)) {
+        (d.items || []).forEach((it) => {
+          returned[it.sku] = (returned[it.sku] || 0) + it.qty;
+        });
+      }
+    });
+    const returnable = sale.items
+      .map((it) => ({ sku: it.sku, name: it.name, price: it.price, qty: Math.max(0, it.qty - (returned[it.sku] || 0)) }))
+      .filter((it) => it.qty > 0);
+    if (returnable.length === 0) {
+      setOpError("По этой продаже уже всё возвращено.");
+      setPostFlow(null);
+      return;
+    }
+    commitReturnFromSale(cp, sale.doc_number, returnable);
   }
   function handlePaymentSelected(method) {
     commit(postFlow.type, flowCounterparty, method);
+  }
+
+  // Returns exactly what was sold, at exactly the price it was sold for —
+  // no cart, no discount, no manual price entry involved.
+  async function commitReturnFromSale(counterparty, saleDocNumber, returnItems) {
+    const qty = returnItems.reduce((s, it) => s + it.qty, 0);
+    const sum = returnItems.reduce((s, it) => s + it.qty * it.price, 0);
+    try {
+      await db("sales_log", {
+        method: "POST",
+        body: {
+          shop_id: shop.id,
+          doc_number: genDocNumber("S"),
+          type: "Возврат от покупателя",
+          date: new Date().toISOString().slice(0, 10),
+          counterparty_id: counterparty.id,
+          counterparty_name: counterparty.name,
+          counterparty_kind: counterparty.kind,
+          payment_method: null,
+          qty,
+          sum,
+          comment: `Возврат по продаже ${saleDocNumber}`,
+          items: returnItems.map((it) => ({ sku: it.sku, name: it.name, qty: it.qty, price: it.price })),
+        },
+        session,
+        prefer: "return=minimal",
+      });
+      for (const it of returnItems) {
+        const stockRow = (items || []).find((s) => s.sku === it.sku);
+        if (stockRow) {
+          await db("stock", { method: "PATCH", query: `?id=eq.${stockRow.id}`, body: { qty: stockRow.qty + it.qty }, session, prefer: "return=minimal" });
+        }
+      }
+      setNotice(`Возврат оформлен: ${qty} шт на ${sum.toLocaleString("ru-RU")} ₸`);
+      setCart([]);
+      setPostFlow(null);
+      setFlowCounterparty(null);
+      load();
+      loadLog();
+    } catch (e) {
+      setOpError(e.message);
+    }
   }
 
   async function commit(type, counterparty, paymentMethod) {
@@ -2885,8 +2961,7 @@ function StockScreen({ session, shop }) {
               </button>
               <button
                 onClick={() => startPost("Возврат от покупателя")}
-                disabled={cart.length === 0}
-                style={{ background: "transparent", border: `1px solid ${c.border}`, borderRadius: 8, padding: "10px 16px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, cursor: cart.length === 0 ? "not-allowed" : "pointer", color: cart.length === 0 ? c.steelLight : c.ink }}
+                style={{ background: "transparent", border: `1px solid ${c.border}`, borderRadius: 8, padding: "10px 16px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, cursor: "pointer", color: c.ink }}
               >
                 Возврат от покупателя
               </button>
