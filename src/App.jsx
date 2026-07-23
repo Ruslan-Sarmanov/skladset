@@ -2410,6 +2410,17 @@ function ContactsScreen({ session, shop }) {
     setSaving(true);
     setError("");
     try {
+      const bin = form.bin.trim();
+      if (bin) {
+        const query = `?shop_id=eq.${shop.id}&bin=eq.${encodeURIComponent(bin)}&select=id,name`;
+        const dupes = await db("counterparties", { query, session });
+        const conflict = dupes.find((d) => d.id !== openId);
+        if (conflict) {
+          setError(`Контрагент с ${form.kind === "Юрлицо" ? "БИН" : "ИИН"} «${bin}» уже есть в базе: «${conflict.name}». Проверьте, может это тот же клиент.`);
+          setSaving(false);
+          return;
+        }
+      }
       if (openId === "new") {
         await db("counterparties", { method: "POST", body: bodyFromForm(), session, prefer: "return=minimal" });
       } else {
@@ -2418,7 +2429,11 @@ function ContactsScreen({ session, shop }) {
       setOpenId(null);
       load();
     } catch (e) {
-      setError(e.message);
+      if (e.message.includes("counterparties_shop_bin_uniq") || e.message.includes("23505")) {
+        setError(`Контрагент с таким ${form.kind === "Юрлицо" ? "БИН" : "ИИН"} уже есть в базе.`);
+      } else {
+        setError(e.message);
+      }
     } finally {
       setSaving(false);
     }
