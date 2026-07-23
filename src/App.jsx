@@ -74,6 +74,9 @@ async function db(table, { method = "GET", query = "", body, session, prefer } =
 function genDocNumber(prefix) {
   return `${prefix}-${Date.now().toString().slice(-6)}`;
 }
+function nextIncomingNumber() {
+  return String(Date.now()).slice(-5);
+}
 
 // Prints arbitrary HTML in a clean, isolated window — avoids all the
 // position/visibility quirks of trying to print just one part of the page.
@@ -814,6 +817,24 @@ function OrdersScreen({ session, shop }) {
           await db("stock", { method: "PATCH", query: `?id=eq.${stockRow.id}`, body: { qty: newQty }, session, prefer: "return=minimal" });
         }
       }
+      await db("documents", {
+        method: "POST",
+        body: {
+          shop_id: shop.id,
+          doc_number: genDocNumber("H"),
+          type: "Расходная накладная",
+          to_name: order.counterparty_name,
+          date: new Date().toISOString().slice(0, 10),
+          sum: order.sum,
+          incoming_number: "",
+          incoming_date: null,
+          note: order.comment,
+          items: order.items,
+          origin: "sale",
+        },
+        session,
+        prefer: "return=minimal",
+      });
       await db("orders", { method: "DELETE", query: `?id=eq.${order.id}`, session, prefer: "return=minimal" });
       setPaymentOpen(false);
       setView("list");
@@ -1751,6 +1772,351 @@ function ReportsScreen({ session, shop }) {
           {tab === "cashOnly" && <CashLedgerReport session={session} shop={shop} salesLog={salesLog} />}
         </>
       )}
+    </div>
+  );
+}
+
+function DocumentsScreen({ session, shop }) {
+  const [list, setList] = useState(null);
+  const [error, setError] = useState("");
+  const [openId, setOpenId] = useState(null);
+  const [edit, setEdit] = useState(null);
+  const [contactPickerOpen, setContactPickerOpen] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [newForm, setNewForm] = useState({ to_name: "", sum: "" });
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    setError("");
+    try {
+      const rows = await db("documents", { query: `?shop_id=eq.${shop.id}&order=date.desc,created_at.desc`, session });
+      setList(rows);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line
+  }, [shop.id]);
+
+  const doc = (list || []).find((d) => d.id === openId);
+  const filteredDocs = (list || []).filter((d) => (!dateFrom || d.date >= dateFrom) && (!dateTo || d.date <= dateTo));
+
+  async function createManual() {
+    if (!newForm.to_name.trim() || !newForm.sum) return;
+    setSaving(true);
+    setError("");
+    try {
+      await db("documents", {
+        method: "POST",
+        body: { shop_id: shop.id, doc_number: genDocNumber("H"), type: "Накладная", to_name: newForm.to_name, date: todayISO(), sum: Number(newForm.sum) || 0, items: [], origin: "manual" },
+        session,
+        prefer: "return=minimal",
+      });
+      setNewForm({ to_name: "", sum: "" });
+      setCreating(false);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openDetail(d) {
+    setEdit({
+      to_name: d.to_name,
+      date: d.date,
+      sum: d.sum,
+      incoming_number: d.incoming_number || "",
+      incoming_date: d.incoming_date || "",
+      note: d.note || "",
+      items: (d.items || []).map((it) => ({ ...it })),
+    });
+    setOpenId(d.id);
+  }
+  const computedSum = edit && edit.items && edit.items.length > 0 ? edit.items.reduce((s, it) => s + it.qty * it.price, 0) : null;
+
+  async function saveEdit() {
+    setSaving(true);
+    setError("");
+    try {
+      await db("documents", {
+        method: "PATCH",
+        query: `?id=eq.${doc.id}`,
+        body: {
+          to_name: edit.to_name,
+          date: edit.date,
+          sum: computedSum !== null ? computedSum : Number(edit.sum) || 0,
+          incoming_number: edit.incoming_number,
+          incoming_date: edit.incoming_date || null,
+          note: edit.note,
+          items: edit.items,
+        },
+        session,
+        prefer: "return=minimal",
+      });
+      setOpenId(null);
+      setEdit(null);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+  function updateItem(i, patch) {
+    setEdit((prev) => ({ ...prev, items: prev.items.map((it, idx) => (idx === i ? { ...it, ...patch } : it)) }));
+  }
+  function removeItem(i) {
+    setEdit((prev) => ({ ...prev, items: prev.items.filter((_, idx) => idx !== i) }));
+  }
+
+  const isIncoming = (t) => t === "Приходная накладная" || t === "Возврат от покупателя";
+  const isLocked = (d) => d && (d.origin === "sale" || d.origin === "return");
+
+  if (doc) {
+    const locked = isLocked(doc);
+    return (
+      <div style={{ maxWidth: 560 }}>
+        <button
+          onClick={() => {
+            setOpenId(null);
+            setEdit(null);
+          }}
+          style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "none", color: c.steel, fontFamily: bodyFont, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: 12 }}
+        >
+          ← К списку документов
+        </button>
+
+        {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
+
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+            <span style={{ fontFamily: displayFont, fontSize: 16, fontWeight: 600, color: c.ink }}>{doc.doc_number}</span>
+            <span style={{ fontSize: 10.5, fontWeight: 700, color: c.steel, background: c.cloud, padding: "2px 8px", borderRadius: 4 }}>{doc.type}</span>
+            {locked && (
+              <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 700, color: c.steel, background: c.cloud, padding: "2px 8px", borderRadius: 4 }}>
+                🔒 только просмотр
+              </span>
+            )}
+          </div>
+
+          {locked ? (
+            <>
+              <div style={{ marginBottom: 12 }}>
+                <label style={fieldLabel}>Получатель / контрагент</label>
+                <div style={{ ...inputStyle, background: c.cloud, color: c.ink, display: "flex", alignItems: "center" }}>{doc.to_name}</div>
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={fieldLabel}>Дата документа</label>
+                <div style={{ ...inputStyle, background: c.cloud, color: c.ink, fontFamily: monoFont, display: "flex", alignItems: "center" }}>{doc.date}</div>
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={fieldLabel}>Сумма, ₸</label>
+                <div style={{ ...inputStyle, background: c.cloud, color: c.ink, fontFamily: monoFont, fontWeight: 700, display: "flex", alignItems: "center" }}>{doc.sum.toLocaleString("ru-RU")}</div>
+              </div>
+              {doc.note && (
+                <div style={{ marginBottom: 12 }}>
+                  <label style={fieldLabel}>Примечание</label>
+                  <div style={{ ...inputStyle, background: c.cloud, color: c.steel, minHeight: 50 }}>{doc.note}</div>
+                </div>
+              )}
+              <div style={{ fontFamily: bodyFont, fontSize: 11.5, color: c.steel, marginTop: 4 }}>
+                {doc.origin === "return" ? "Документ создан автоматически при возврате и не редактируется." : "Документ создан автоматически при продаже и не редактируется."}
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ marginBottom: 12 }}>
+                <label style={fieldLabel}>Получатель / контрагент</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input value={edit.to_name} onChange={(e) => setEdit({ ...edit, to_name: e.target.value })} style={inputStyle} />
+                  <button
+                    onClick={() => setContactPickerOpen(true)}
+                    title="Выбрать из контрагентов"
+                    style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 6, background: c.cloud, border: `1px solid ${c.border}`, borderRadius: 8, padding: "0 12px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, color: c.ink, cursor: "pointer" }}
+                  >
+                    👥 Выбрать
+                  </button>
+                </div>
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={fieldLabel}>Дата документа</label>
+                <input type="date" value={edit.date && edit.date.includes("-") ? edit.date : ""} onChange={(e) => setEdit({ ...edit, date: e.target.value })} style={inputStyle} />
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={fieldLabel}>Сумма, ₸</label>
+                {computedSum !== null ? (
+                  <div style={{ ...inputStyle, display: "flex", alignItems: "center", background: c.cloud, color: c.ink, fontFamily: monoFont, fontWeight: 700 }}>
+                    {computedSum.toLocaleString("ru-RU")}
+                    <span style={{ marginLeft: "auto", fontFamily: bodyFont, fontWeight: 500, fontSize: 11, color: c.steel }}>считается по позициям ниже</span>
+                  </div>
+                ) : (
+                  <input type="number" value={edit.sum} onFocus={(e) => e.target.select()} onChange={(e) => setEdit({ ...edit, sum: e.target.value })} style={inputStyle} />
+                )}
+              </div>
+
+              {isIncoming(doc.type) && (
+                <>
+                  <div style={{ marginTop: 10, marginBottom: 4, fontFamily: displayFont, fontSize: 13.5, fontWeight: 600, color: c.ink }}>Приходный документ</div>
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={fieldLabel}>№ приходного документа</label>
+                    <input value={edit.incoming_number} onChange={(e) => setEdit({ ...edit, incoming_number: e.target.value })} style={inputStyle} placeholder="Например, 00145" />
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={fieldLabel}>Дата приходного документа</label>
+                    <input type="date" value={edit.incoming_date} onChange={(e) => setEdit({ ...edit, incoming_date: e.target.value })} style={inputStyle} />
+                  </div>
+                </>
+              )}
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={fieldLabel}>Примечание</label>
+                <textarea value={edit.note} onChange={(e) => setEdit({ ...edit, note: e.target.value })} rows={3} style={{ ...inputStyle, resize: "vertical" }} />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button onClick={saveEdit} disabled={saving} style={{ ...primaryBtn, opacity: saving ? 0.7 : 1 }}>
+                  {saving ? <Spinner /> : "Сохранить"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {edit.items && edit.items.length > 0 && (
+          <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden", marginTop: 16 }}>
+            <div style={{ padding: "10px 14px", borderBottom: `1px solid ${c.border}`, fontFamily: displayFont, fontSize: 13.5, fontWeight: 600, color: c.ink }}>Позиции документа</div>
+            <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+              <span style={{ width: 130 }}>Артикул</span>
+              <span style={{ flex: 1 }}>Наименование</span>
+              <span style={{ width: 60, textAlign: "right" }}>Кол.</span>
+              <span style={{ width: 90, textAlign: "right" }}>Цена</span>
+              <span style={{ width: 100, textAlign: "right" }}>Сумма</span>
+              {!locked && <span style={{ width: 24 }} />}
+            </div>
+            {edit.items.map((it, i) =>
+              locked ? (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
+                  <span style={{ width: 130, fontFamily: monoFont, color: c.steel }}>{it.sku}</span>
+                  <span style={{ flex: 1, color: c.ink }}>{it.name}</span>
+                  <span style={{ width: 60, textAlign: "right", fontFamily: monoFont }}>{it.qty}</span>
+                  <span style={{ width: 90, textAlign: "right", fontFamily: monoFont }}>{it.price.toLocaleString("ru-RU")}</span>
+                  <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontWeight: 600 }}>{(it.qty * it.price).toLocaleString("ru-RU")}</span>
+                </div>
+              ) : (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
+                  <span style={{ width: 130, fontFamily: monoFont, color: c.steel }}>{it.sku}</span>
+                  <span style={{ flex: 1, color: c.ink }}>{it.name}</span>
+                  <input
+                    type="number"
+                    value={it.qty}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => updateItem(i, { qty: Math.max(0, Number(e.target.value) || 0) })}
+                    style={{ width: 60, textAlign: "right", padding: "3px 6px", borderRadius: 5, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12 }}
+                  />
+                  <input
+                    type="number"
+                    value={it.price}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => updateItem(i, { price: Math.max(0, Number(e.target.value) || 0) })}
+                    style={{ width: 90, textAlign: "right", padding: "3px 6px", borderRadius: 5, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12 }}
+                  />
+                  <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontWeight: 600 }}>{(it.qty * it.price).toLocaleString("ru-RU")}</span>
+                  <span style={{ width: 24, textAlign: "right" }}>
+                    <button onClick={() => removeItem(i)} style={{ background: "none", border: "none", cursor: "pointer", color: c.steelLight, padding: 0 }}>
+                      ✕
+                    </button>
+                  </span>
+                </div>
+              )
+            )}
+            <div style={{ display: "flex", padding: "8px 10px", borderTop: `1px solid ${c.border}`, background: c.cloud }}>
+              <span style={{ flex: 1, fontFamily: bodyFont, fontSize: 12.5, fontWeight: 600, color: c.ink }}>Итого</span>
+              <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontSize: 12.5, fontWeight: 700, color: c.ink }}>
+                {(computedSum !== null ? computedSum : doc.sum).toLocaleString("ru-RU")}
+              </span>
+              {!locked && <span style={{ width: 24 }} />}
+            </div>
+          </div>
+        )}
+
+        {contactPickerOpen && (
+          <CounterpartyModal
+            session={session}
+            shop={shop}
+            onSelect={(cp) => {
+              setEdit({ ...edit, to_name: cp.name });
+              setContactPickerOpen(false);
+            }}
+            onClose={() => setContactPickerOpen(false)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ fontFamily: displayFont, fontSize: 20, fontWeight: 600, color: c.ink }}>Документы</div>
+        <button onClick={() => setCreating(!creating)} style={primaryBtn}>
+          <Icon size={15}>+</Icon> Новая накладная
+        </button>
+      </div>
+
+      {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
+
+      {creating && (
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 18, marginBottom: 16 }}>
+          <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+            <input value={newForm.to_name} onChange={(e) => setNewForm({ ...newForm, to_name: e.target.value })} placeholder="Получатель (магазин или ИП)" style={inputStyle} />
+            <input
+              value={newForm.sum}
+              onFocus={(e) => e.target.select()}
+              onChange={(e) => setNewForm({ ...newForm, sum: e.target.value })}
+              placeholder="Сумма, ₸"
+              style={{ ...inputStyle, maxWidth: 160 }}
+            />
+          </div>
+          <button onClick={createManual} disabled={saving} style={{ ...primaryBtn, opacity: saving ? 0.7 : 1 }}>
+            {saving ? <Spinner /> : "Создать документ"}
+          </button>
+        </div>
+      )}
+
+      <DateRangeRow dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} />
+
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+          <span style={{ width: 100 }}>№</span>
+          <span style={{ width: 170 }}>Тип</span>
+          <span style={{ flex: 1 }}>Получатель</span>
+          <span style={{ width: 90 }}>Дата</span>
+          <span style={{ width: 100, textAlign: "right" }}>Сумма, ₸</span>
+        </div>
+        {list === null && (
+          <div style={{ display: "flex", gap: 8, padding: 20, color: c.steel, fontSize: 13 }}>
+            <Spinner /> Загружаю документы…
+          </div>
+        )}
+        {list !== null && filteredDocs.length === 0 && (
+          <div style={{ padding: 18, fontFamily: bodyFont, fontSize: 13.5, color: c.steel }}>{(list || []).length === 0 ? "Документов пока нет." : "Нет документов за выбранный период."}</div>
+        )}
+        {filteredDocs.map((d, i) => (
+          <div key={d.id} onClick={() => openDetail(d)} style={{ display: "flex", gap: 8, padding: "10px 14px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, cursor: "pointer", fontFamily: bodyFont, fontSize: 13 }}>
+            <span style={{ width: 100, fontFamily: monoFont, fontSize: 12.5, color: c.steel }}>{d.doc_number}</span>
+            <span style={{ width: 170, color: c.ink }}>{d.type}</span>
+            <span style={{ flex: 1, color: c.ink }}>{d.to_name}</span>
+            <span style={{ width: 90, fontFamily: monoFont, fontSize: 12.5, color: c.steel }}>{d.date}</span>
+            <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, color: c.ink }}>{d.sum.toLocaleString("ru-RU")}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -2702,6 +3068,24 @@ function SalesLogPanel({ salesLog, shop, session, stockItems, onCommitted }) {
           await db("stock", { method: "PATCH", query: `?id=eq.${stockRow.id}`, body: { qty: stockRow.qty + it.qty }, session, prefer: "return=minimal" });
         }
       }
+      await db("documents", {
+        method: "POST",
+        body: {
+          shop_id: shop.id,
+          doc_number: genDocNumber("PR"),
+          type: "Возврат от покупателя",
+          to_name: opened.counterparty_name,
+          date: todayISO(),
+          sum,
+          incoming_number: "",
+          incoming_date: todayISO(),
+          note: `Возврат по продаже ${opened.doc_number}`,
+          items: selectedItems.map((it) => ({ sku: it.sku, name: it.name, qty: it.qty, price: it.price })),
+          origin: "return",
+        },
+        session,
+        prefer: "return=minimal",
+      });
       setReturnNotice(`Возврат оформлен: ${qty} шт на ${sum.toLocaleString("ru-RU")} ₸`);
       setReviewRows(null);
       if (onCommitted) onCommitted();
@@ -3069,6 +3453,25 @@ function ExcelImportInline({ session, shop, onImported }) {
         await db("stock", { method: "POST", body: chunk, session, prefer: "return=minimal" });
         setDone(Math.min(rows.length, i + chunkSize));
       }
+      const sum = rows.reduce((s, r) => s + r.qty * r.purchase_price, 0);
+      await db("documents", {
+        method: "POST",
+        body: {
+          shop_id: shop.id,
+          doc_number: genDocNumber("PR"),
+          type: "Приходная накладная",
+          to_name: "Поставщик (укажите)",
+          date: todayISO(),
+          sum,
+          incoming_number: nextIncomingNumber(),
+          incoming_date: todayISO(),
+          note: `Импорт из Excel: ${fileName}`,
+          items: rows.map((r) => ({ sku: r.sku, name: r.name, qty: r.qty, price: r.purchase_price })),
+          origin: "excel",
+        },
+        session,
+        prefer: "return=minimal",
+      });
       setRows(null);
       setFileName("");
       onImported();
@@ -3203,6 +3606,24 @@ function StockScreen({ session, shop }) {
         await db("stock", {
           method: "POST",
           body: { shop_id: shop.id, sku: form.sku, alt_sku: form.alt_sku, name: form.name, brand: form.brand, model: form.model, qty: form.qty, price: form.price, purchase_price: form.purchase_price, min_qty: form.min_qty },
+          session,
+          prefer: "return=minimal",
+        });
+        await db("documents", {
+          method: "POST",
+          body: {
+            shop_id: shop.id,
+            doc_number: genDocNumber("PR"),
+            type: "Приходная накладная",
+            to_name: "Поставщик (укажите)",
+            date: todayISO(),
+            sum: form.qty * form.purchase_price,
+            incoming_number: nextIncomingNumber(),
+            incoming_date: todayISO(),
+            note: `Ручное добавление: ${form.sku} — ${form.qty} шт по ${form.purchase_price.toLocaleString("ru-RU")} ₸`,
+            items: [{ sku: form.sku, name: form.name, qty: form.qty, price: form.purchase_price }],
+            origin: "manual",
+          },
           session,
           prefer: "return=minimal",
         });
@@ -3400,6 +3821,24 @@ function StockScreen({ session, shop }) {
           await db("stock", { method: "PATCH", query: `?id=eq.${stockRow.id}`, body: { qty: stockRow.qty + it.qty }, session, prefer: "return=minimal" });
         }
       }
+      await db("documents", {
+        method: "POST",
+        body: {
+          shop_id: shop.id,
+          doc_number: genDocNumber("PR"),
+          type: "Возврат от покупателя",
+          to_name: counterparty.name,
+          date: new Date().toISOString().slice(0, 10),
+          sum,
+          incoming_number: "",
+          incoming_date: new Date().toISOString().slice(0, 10),
+          note: `Возврат по продаже ${sale.doc_number}`,
+          items: returnItems.map((it) => ({ sku: it.sku, name: it.name, qty: it.qty, price: it.price })),
+          origin: "return",
+        },
+        session,
+        prefer: "return=minimal",
+      });
       setNotice(`Возврат оформлен: ${qty} шт на ${sum.toLocaleString("ru-RU")} ₸`);
       setCart([]);
       setReturnReview(null);
@@ -3471,6 +3910,25 @@ function StockScreen({ session, shop }) {
           const newQty = Math.max(0, (current ? current.qty : 0) + sign * row.qty);
           await db("stock", { method: "PATCH", query: `?id=eq.${row.stock_id}`, body: { qty: newQty }, session, prefer: "return=minimal" });
         }
+        const isReturn = type === "Возврат от покупателя";
+        await db("documents", {
+          method: "POST",
+          body: {
+            shop_id: shop.id,
+            doc_number: genDocNumber(isReturn ? "PR" : type === "Списание" ? "SP" : "H"),
+            type: isReturn ? "Возврат от покупателя" : type === "Списание" ? "Списание" : "Расходная накладная",
+            to_name: counterparty ? counterparty.name : "Списание по складу",
+            date: new Date().toISOString().slice(0, 10),
+            sum,
+            incoming_number: "",
+            incoming_date: isReturn ? new Date().toISOString().slice(0, 10) : null,
+            note: fullComment,
+            items: itemsPayload,
+            origin: type === "Списание" ? "sale" : isReturn ? "return" : "sale",
+          },
+          session,
+          prefer: "return=minimal",
+        });
         setNotice(`«${type}» проведена: ${qty} шт на ${sum.toLocaleString("ru-RU")} ₸`);
       }
       setCart([]);
@@ -4113,13 +4571,19 @@ export default function App() {
           <Icon size={17}>📈</Icon> Отчёты
         </div>
         <div
+          onClick={() => setTab("docs")}
+          style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "docs" ? c.amber : "transparent", color: tab === "docs" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
+        >
+          <Icon size={17}>📄</Icon> Документы
+        </div>
+        <div
           onClick={() => setTab("settings")}
           style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "settings" ? c.amber : "transparent", color: tab === "settings" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
         >
           <Icon size={17}>⚙️</Icon> Настройки
         </div>
         <div style={{ marginTop: "auto", padding: "10px 14px", fontSize: 11, color: c.steelLight, fontFamily: bodyFont }}>
-          Остальные разделы (документы) подключим следующими.
+          Все основные разделы прототипа перенесены.
         </div>
         <button
           onClick={() => {
@@ -4139,6 +4603,7 @@ export default function App() {
         {tab === "contacts" && <ContactsScreen session={session} shop={shop} />}
         {tab === "orders" && <OrdersScreen session={session} shop={shop} />}
         {tab === "reports" && <ReportsScreen session={session} shop={shop} />}
+        {tab === "docs" && <DocumentsScreen session={session} shop={shop} />}
         {tab === "settings" && <SettingsScreen session={session} shop={shop} onShopUpdate={setShop} />}
       </main>
     </div>
