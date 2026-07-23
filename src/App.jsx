@@ -1506,6 +1506,8 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState("");
   const [toggling, setToggling] = useState(false);
+  const [sortKey, setSortKey] = useState(null); // null | "qty" | "price"
+  const [sortDir, setSortDir] = useState("asc");
 
   async function search() {
     setError("");
@@ -1544,8 +1546,24 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
   }
 
   const [contact, setContact] = useState(null);
-  const own = (rows || []).filter((r) => r.shop_id === shop.id);
-  const others = (rows || []).filter((r) => r.shop_id !== shop.id);
+  function toggleSort(key) {
+    if (sortKey === key) setSortDir(sortDir === "asc" ? "desc" : "asc");
+    else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+  function sortArrow(key) {
+    if (sortKey !== key) return <span style={{ opacity: 0.3, marginLeft: 4 }}>▲</span>;
+    return <span style={{ marginLeft: 4 }}>{sortDir === "asc" ? "▲" : "▼"}</span>;
+  }
+  function applySort(list) {
+    if (!sortKey) return list;
+    const mult = sortDir === "asc" ? 1 : -1;
+    return [...list].sort((a, b) => (a[sortKey] - b[sortKey]) * mult);
+  }
+  const own = applySort((rows || []).filter((r) => r.shop_id === shop.id));
+  const others = applySort((rows || []).filter((r) => r.shop_id !== shop.id));
 
   return (
     <div>
@@ -1617,8 +1635,12 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
             <span style={{ width: 100, textAlign: "left" }}>Субс / аналог</span>
             <span style={{ flex: 1, textAlign: "left" }}>Наименование</span>
             <span style={{ width: 170 }}>Склад / магазин</span>
-            <span style={{ width: 60, textAlign: "right" }}>Кол.</span>
-            <span style={{ width: 100, textAlign: "right" }}>Цена</span>
+            <span onClick={() => toggleSort("qty")} style={{ width: 60, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+              Кол. {sortArrow("qty")}
+            </span>
+            <span onClick={() => toggleSort("price")} style={{ width: 100, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+              Цена {sortArrow("price")}
+            </span>
             <span style={{ width: 90 }} />
           </div>
           {[...own, ...others].map((r, i) => (
