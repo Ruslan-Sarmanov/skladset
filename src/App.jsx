@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
+import { LayoutGrid, Boxes, Search, ShoppingCart, BarChart3, FileText, Users, Settings, LogOut } from "lucide-react";
 
 // Tiny inline icon replacements — avoids needing to install any package.
 const Spinner = () => (
@@ -5158,54 +5159,45 @@ export default function App() {
           <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 17, color: "#fff" }}>СкладСеть</div>
           <div style={{ fontFamily: bodyFont, fontSize: 11.5, color: c.steelLight, marginTop: 2 }}>{shop.name || "Мой магазин"}</div>
         </div>
-        <div
-          onClick={() => setTab("dash")}
-          style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "dash" ? c.amber : "transparent", color: tab === "dash" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
-        >
-          <Icon size={17}>📊</Icon> Дашборд
-        </div>
-        <div
-          onClick={() => setTab("stock")}
-          style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "stock" ? c.amber : "transparent", color: tab === "stock" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
-        >
-          <Icon size={17}>📦</Icon> Склад
-        </div>
-        <div
-          onClick={() => setTab("network")}
-          style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "network" ? c.amber : "transparent", color: tab === "network" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
-        >
-          <Icon size={17}>🔎</Icon> Поиск по сети
-        </div>
-        <div
-          onClick={() => setTab("contacts")}
-          style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "contacts" ? c.amber : "transparent", color: tab === "contacts" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
-        >
-          <Icon size={17}>👥</Icon> Контрагенты
-        </div>
-        <div
-          onClick={() => setTab("orders")}
-          style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "orders" ? c.amber : "transparent", color: tab === "orders" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
-        >
-          <Icon size={17}>🛒</Icon> Заказы
-        </div>
-        <div
-          onClick={() => setTab("reports")}
-          style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "reports" ? c.amber : "transparent", color: tab === "reports" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
-        >
-          <Icon size={17}>📈</Icon> Отчёты
-        </div>
-        <div
-          onClick={() => setTab("docs")}
-          style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "docs" ? c.amber : "transparent", color: tab === "docs" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
-        >
-          <Icon size={17}>📄</Icon> Документы
-        </div>
-        <div
-          onClick={() => setTab("settings")}
-          style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer", background: tab === "settings" ? c.amber : "transparent", color: tab === "settings" ? c.ink : "#B8C0CC", fontWeight: 600, fontSize: 14 }}
-        >
-          <Icon size={17}>⚙️</Icon> Настройки
-        </div>
+        {[
+          { key: "dash", label: "Дашборд", icon: LayoutGrid },
+          { key: "stock", label: "Склад", icon: Boxes },
+          { key: "network", label: "Поиск по сети", icon: Search },
+          { key: "orders", label: "Заказы", icon: ShoppingCart },
+          { key: "reports", label: "Отчёты", icon: BarChart3 },
+          { key: "docs", label: "Документы", icon: FileText },
+          { key: "contacts", label: "Контрагенты", icon: Users },
+          { key: "settings", label: "Настройки", icon: Settings },
+        ].map((n) => {
+          const NavIcon = n.icon;
+          const active = tab === n.key;
+          return (
+            <button
+              key={n.key}
+              onClick={() => setTab(n.key)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                width: "100%",
+                padding: "10px 14px",
+                borderRadius: 8,
+                border: "none",
+                background: active ? c.amber : "transparent",
+                color: active ? c.ink : "#B8C0CC",
+                fontFamily: bodyFont,
+                fontSize: 14,
+                fontWeight: active ? 600 : 500,
+                cursor: "pointer",
+                textAlign: "left",
+                transition: "background 0.15s ease",
+              }}
+            >
+              <NavIcon size={17} strokeWidth={2} />
+              {n.label}
+            </button>
+          );
+        })}
         <div style={{ marginTop: "auto", padding: "10px 14px", fontSize: 11, color: c.steelLight, fontFamily: bodyFont }}>
           Все основные разделы прототипа перенесены.
         </div>
@@ -5216,7 +5208,7 @@ export default function App() {
           }}
           style={{ display: "flex", alignItems: "center", gap: 8, background: "transparent", border: `1px solid #3A414D`, borderRadius: 8, padding: "9px 14px", color: "#B8C0CC", fontFamily: bodyFont, fontSize: 12.5, cursor: "pointer" }}
         >
-          <Icon size={14}>⏻</Icon> Выйти
+          <LogOut size={14} strokeWidth={2} /> Выйти
         </button>
       </aside>
 
