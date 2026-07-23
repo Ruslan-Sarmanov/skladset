@@ -1675,6 +1675,79 @@ function matchColumn(header) {
 
 // ---- Excel import, embedded as a tab inside the Склад operation panel ----
 // ---- Return flow: pick the original sale this return is based on ----
+// ---- Pick which items (and how much) to actually return from a sale ----
+function ReturnReviewModal({ sale, rows, onConfirm, onClose, confirming }) {
+  const [items, setItems] = useState(rows);
+
+  function toggle(i) {
+    setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, checked: !it.checked } : it)));
+  }
+  function setQty(i, qty) {
+    setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, qty: Math.min(it.maxQty, Math.max(1, qty)) } : it)));
+  }
+
+  const selected = items.filter((it) => it.checked);
+  const total = selected.reduce((s, it) => s + it.qty * it.price, 0);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(28,33,40,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: c.panel, borderRadius: 12, width: 480, maxHeight: "85vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${c.border}` }}>
+          <div>
+            <div style={{ fontFamily: displayFont, fontSize: 15, fontWeight: 600, color: c.ink }}>Что возвращаем?</div>
+            <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginTop: 2 }}>
+              {sale.doc_number} · {sale.counterparty_name}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: c.steel }}>
+            <Icon size={17}>✕</Icon>
+          </button>
+        </div>
+        <div style={{ padding: "10px 18px 0", fontFamily: bodyFont, fontSize: 12, color: c.steel }}>Отметьте позиции и при необходимости поправьте количество.</div>
+        <div style={{ padding: 18 }}>
+          <div style={{ border: `1px solid ${c.border}`, borderRadius: 8, overflow: "hidden" }}>
+            {items.map((it, i) => (
+              <div
+                key={it.sku}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, background: it.checked ? "#fff" : c.cloud }}
+              >
+                <input type="checkbox" checked={it.checked} onChange={() => toggle(i)} style={{ width: 16, height: 16, cursor: "pointer", flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: bodyFont, fontSize: 13, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</div>
+                  <div style={{ fontFamily: monoFont, fontSize: 11, color: c.steel }}>{it.sku} · продано {it.maxQty} шт по {it.price.toLocaleString("ru-RU")} ₸</div>
+                </div>
+                <input
+                  type="number"
+                  value={it.qty}
+                  disabled={!it.checked}
+                  max={it.maxQty}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => setQty(i, Number(e.target.value) || 1)}
+                  style={{ width: 56, textAlign: "right", padding: "4px 6px", borderRadius: 5, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12.5, opacity: it.checked ? 1 : 0.5 }}
+                />
+                <span style={{ width: 80, textAlign: "right", fontFamily: monoFont, fontWeight: 700, color: it.checked ? c.ink : c.steelLight, flexShrink: 0 }}>
+                  {(it.qty * it.price).toLocaleString("ru-RU")}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 4px", fontFamily: bodyFont, fontSize: 13, fontWeight: 700, color: c.ink }}>
+            <span>Итого к возврату</span>
+            <span style={{ fontFamily: monoFont }}>{total.toLocaleString("ru-RU")} ₸</span>
+          </div>
+          <button
+            onClick={() => onConfirm(selected)}
+            disabled={selected.length === 0 || confirming}
+            style={{ ...primaryBtn, width: "100%", opacity: selected.length === 0 || confirming ? 0.6 : 1 }}
+          >
+            {confirming ? <Spinner /> : "Вернуть"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ReturnSourceModal({ salesLog, cartSkus, onSelect, onClose }) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -1760,8 +1833,7 @@ function SalesLogPanel({ salesLog, shop, session, stockItems, onCommitted }) {
   const [skuQuery, setSkuQuery] = useState("");
   const [openId, setOpenId] = useState(null);
   const [printOpen, setPrintOpen] = useState(false);
-  const [returnMode, setReturnMode] = useState(false);
-  const [returnItems, setReturnItems] = useState([]);
+  const [reviewRows, setReviewRows] = useState(null);
   const [returning, setReturning] = useState(false);
   const [returnError, setReturnError] = useState("");
   const [returnNotice, setReturnNotice] = useState("");
@@ -1823,25 +1895,18 @@ function SalesLogPanel({ salesLog, shop, session, stockItems, onCommitted }) {
   }
 
   function startReturn(sale) {
-    const returnable = returnableItems(sale).map((it) => ({ sku: it.sku, name: it.name, qty: it.maxQty, price: it.price, maxQty: it.maxQty }));
-    setReturnItems(returnable);
+    const returnable = returnableItems(sale).map((it) => ({ sku: it.sku, name: it.name, qty: it.maxQty, price: it.price, maxQty: it.maxQty, checked: true }));
     setReturnError("");
     setReturnNotice("");
-    setReturnMode(true);
+    setReviewRows(returnable);
   }
-  function updateReturnQty(i, qty) {
-    setReturnItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, qty: Math.min(it.maxQty, Math.max(1, qty)) } : it)));
-  }
-  function removeReturnItem(i) {
-    setReturnItems((prev) => prev.filter((_, idx) => idx !== i));
-  }
-  async function doReturn() {
-    if (returnItems.length === 0) return;
+  async function doReturn(selectedItems) {
+    if (!selectedItems || selectedItems.length === 0) return;
     setReturning(true);
     setReturnError("");
     try {
-      const qty = returnItems.reduce((s, it) => s + it.qty, 0);
-      const sum = returnItems.reduce((s, it) => s + it.qty * it.price, 0);
+      const qty = selectedItems.reduce((s, it) => s + it.qty, 0);
+      const sum = selectedItems.reduce((s, it) => s + it.qty * it.price, 0);
       await db("sales_log", {
         method: "POST",
         body: {
@@ -1856,19 +1921,19 @@ function SalesLogPanel({ salesLog, shop, session, stockItems, onCommitted }) {
           qty,
           sum,
           comment: `Возврат по продаже ${opened.doc_number}`,
-          items: returnItems,
+          items: selectedItems.map((it) => ({ sku: it.sku, name: it.name, qty: it.qty, price: it.price })),
         },
         session,
         prefer: "return=minimal",
       });
-      for (const it of returnItems) {
+      for (const it of selectedItems) {
         const stockRow = (stockItems || []).find((s) => s.sku === it.sku);
         if (stockRow) {
           await db("stock", { method: "PATCH", query: `?id=eq.${stockRow.id}`, body: { qty: stockRow.qty + it.qty }, session, prefer: "return=minimal" });
         }
       }
       setReturnNotice(`Возврат оформлен: ${qty} шт на ${sum.toLocaleString("ru-RU")} ₸`);
-      setReturnMode(false);
+      setReviewRows(null);
       if (onCommitted) onCommitted();
     } catch (e) {
       setReturnError(e.message);
@@ -1899,7 +1964,7 @@ function SalesLogPanel({ salesLog, shop, session, stockItems, onCommitted }) {
               </div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              {opened.type === "Продажа" && !returnMode && returnableItems(opened).length > 0 && (
+              {opened.type === "Продажа" && returnableItems(opened).length > 0 && (
                 <button
                   onClick={() => startReturn(opened)}
                   style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", color: c.amberDark, border: `1px solid ${c.border}`, borderRadius: 8, padding: "8px 14px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, cursor: "pointer" }}
@@ -1907,7 +1972,7 @@ function SalesLogPanel({ salesLog, shop, session, stockItems, onCommitted }) {
                   ↩ Оформить возврат
                 </button>
               )}
-              {opened.type === "Продажа" && !returnMode && returnableItems(opened).length === 0 && (
+              {opened.type === "Продажа" && returnableItems(opened).length === 0 && (
                 <span style={{ display: "flex", alignItems: "center", fontFamily: bodyFont, fontSize: 12, color: c.steel }}>Все позиции уже возвращены</span>
               )}
               <button
@@ -1926,90 +1991,28 @@ function SalesLogPanel({ salesLog, shop, session, stockItems, onCommitted }) {
             <div style={{ margin: "12px 18px 0", background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5 }}>{returnError}</div>
           )}
 
-          {returnMode ? (
-            <>
-              <div style={{ padding: "10px 18px", fontFamily: bodyFont, fontSize: 12.5, color: c.steel }}>
-                Уберите позиции или уменьшите количество, если клиент возвращает не всё.
-              </div>
-              <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
-                <span style={{ width: 130 }}>Артикул</span>
-                <span style={{ flex: 1 }}>Наименование</span>
-                <span style={{ width: 60, textAlign: "right" }}>Кол.</span>
-                <span style={{ width: 90, textAlign: "right" }}>Цена</span>
-                <span style={{ width: 100, textAlign: "right" }}>Сумма</span>
-                <span style={{ width: 20 }} />
-              </div>
-              {returnItems.length === 0 && <div style={{ padding: 18, textAlign: "center", color: c.steel, fontSize: 13 }}>Список пуст.</div>}
-              {returnItems.map((it, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
-                  <span style={{ width: 130, fontFamily: monoFont, color: c.steel }}>{it.sku}</span>
-                  <span style={{ flex: 1, color: c.ink }}>{it.name}</span>
-                  <div style={{ width: 60 }}>
-                    <input
-                      type="number"
-                      value={it.qty}
-                      max={it.maxQty}
-                      onFocus={(e) => e.target.select()}
-                      onChange={(e) => updateReturnQty(i, Number(e.target.value) || 1)}
-                      style={{ width: 60, textAlign: "right", padding: "3px 6px", borderRadius: 5, border: `1px solid ${c.border}`, fontFamily: monoFont, fontSize: 12 }}
-                    />
-                    <div style={{ textAlign: "right", fontSize: 10, color: c.steelLight, marginTop: 2 }}>из {it.maxQty}</div>
-                  </div>
-                  <span style={{ width: 90, textAlign: "right", fontFamily: monoFont }}>{it.price.toLocaleString("ru-RU")}</span>
-                  <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontWeight: 600 }}>{(it.qty * it.price).toLocaleString("ru-RU")}</span>
-                  <button onClick={() => removeReturnItem(i)} style={{ width: 20, background: "none", border: "none", color: c.steelLight, cursor: "pointer" }}>
-                    ✕
-                  </button>
-                </div>
-              ))}
-              <div style={{ display: "flex", padding: "8px 10px", borderTop: `1px solid ${c.border}`, background: c.cloud }}>
-                <span style={{ flex: 1, fontFamily: bodyFont, fontSize: 12.5, fontWeight: 600, color: c.ink }}>Итого к возврату</span>
-                <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontSize: 12.5, fontWeight: 700, color: c.ink }}>
-                  {returnItems.reduce((s, it) => s + it.qty * it.price, 0).toLocaleString("ru-RU")}
-                </span>
-              </div>
-              <div style={{ display: "flex", gap: 8, padding: 14 }}>
-                <button
-                  onClick={doReturn}
-                  disabled={returning || returnItems.length === 0}
-                  style={{ ...primaryBtn, opacity: returning || returnItems.length === 0 ? 0.6 : 1 }}
-                >
-                  {returning ? <Spinner /> : "Провести возврат"}
-                </button>
-                <button
-                  onClick={() => setReturnMode(false)}
-                  style={{ background: "transparent", border: `1px solid ${c.border}`, borderRadius: 8, padding: "10px 16px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, cursor: "pointer", color: c.ink }}
-                >
-                  Отмена
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
-                <span style={{ width: 130 }}>Артикул</span>
-                <span style={{ flex: 1 }}>Наименование</span>
-                <span style={{ width: 50, textAlign: "right" }}>Кол.</span>
-                <span style={{ width: 90, textAlign: "right" }}>Цена</span>
-                <span style={{ width: 100, textAlign: "right" }}>Сумма</span>
-              </div>
-              {(opened.items || []).map((it, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
-                  <span style={{ width: 130, fontFamily: monoFont, color: c.steel }}>{it.sku}</span>
-                  <span style={{ flex: 1, color: c.ink }}>{it.name}</span>
-                  <span style={{ width: 50, textAlign: "right", fontFamily: monoFont }}>{it.qty}</span>
-                  <span style={{ width: 90, textAlign: "right", fontFamily: monoFont }}>{it.price.toLocaleString("ru-RU")}</span>
-                  <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontWeight: 600 }}>{(it.qty * it.price).toLocaleString("ru-RU")}</span>
-                </div>
-              ))}
-              <div style={{ display: "flex", padding: "8px 10px", borderTop: `1px solid ${c.border}`, background: c.cloud }}>
-                <span style={{ flex: 1, fontFamily: bodyFont, fontSize: 12.5, fontWeight: 600, color: c.ink }}>Итого</span>
-                <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontSize: 12.5, fontWeight: 700, color: c.ink }}>{opened.sum.toLocaleString("ru-RU")}</span>
-              </div>
-              {opened.comment && (
-                <div style={{ padding: "10px 18px", borderTop: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5, color: c.steel }}>Комментарий: {opened.comment}</div>
-              )}
-            </>
+          <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+            <span style={{ width: 130 }}>Артикул</span>
+            <span style={{ flex: 1 }}>Наименование</span>
+            <span style={{ width: 50, textAlign: "right" }}>Кол.</span>
+            <span style={{ width: 90, textAlign: "right" }}>Цена</span>
+            <span style={{ width: 100, textAlign: "right" }}>Сумма</span>
+          </div>
+          {(opened.items || []).map((it, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}>
+              <span style={{ width: 130, fontFamily: monoFont, color: c.steel }}>{it.sku}</span>
+              <span style={{ flex: 1, color: c.ink }}>{it.name}</span>
+              <span style={{ width: 50, textAlign: "right", fontFamily: monoFont }}>{it.qty}</span>
+              <span style={{ width: 90, textAlign: "right", fontFamily: monoFont }}>{it.price.toLocaleString("ru-RU")}</span>
+              <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontWeight: 600 }}>{(it.qty * it.price).toLocaleString("ru-RU")}</span>
+            </div>
+          ))}
+          <div style={{ display: "flex", padding: "8px 10px", borderTop: `1px solid ${c.border}`, background: c.cloud }}>
+            <span style={{ flex: 1, fontFamily: bodyFont, fontSize: 12.5, fontWeight: 600, color: c.ink }}>Итого</span>
+            <span style={{ width: 100, textAlign: "right", fontFamily: monoFont, fontSize: 12.5, fontWeight: 700, color: c.ink }}>{opened.sum.toLocaleString("ru-RU")}</span>
+          </div>
+          {opened.comment && (
+            <div style={{ padding: "10px 18px", borderTop: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5, color: c.steel }}>Комментарий: {opened.comment}</div>
           )}
         </div>
 
@@ -2125,6 +2128,9 @@ function SalesLogPanel({ salesLog, shop, session, stockItems, onCommitted }) {
               </div>
             </div>
           </div>
+        )}
+        {reviewRows && (
+          <ReturnReviewModal sale={opened} rows={reviewRows} confirming={returning} onConfirm={(selected) => doReturn(selected)} onClose={() => setReviewRows(null)} />
         )}
       </div>
     );
@@ -2362,6 +2368,8 @@ function StockScreen({ session, shop }) {
   const [opDiscount, setOpDiscount] = useState(0);
   const [roundAdjust, setRoundAdjust] = useState(0);
   const [postFlow, setPostFlow] = useState(null); // { type, step: "counterparty" | "payment" }
+  const [returnReview, setReturnReview] = useState(null); // { sale, rows }
+  const [returnConfirming, setReturnConfirming] = useState(false);
   const [flowCounterparty, setFlowCounterparty] = useState(null);
   const [notice, setNotice] = useState("");
   const [opError, setOpError] = useState("");
@@ -2548,7 +2556,6 @@ function StockScreen({ session, shop }) {
     else commit(postFlow.type, cp, null);
   }
   function handleReturnSourceSelected(sale) {
-    const cp = { id: sale.counterparty_id, name: sale.counterparty_name, kind: sale.counterparty_kind };
     // How much of each sku from this exact sale was already returned before.
     const returned = {};
     (salesLog || []).forEach((d) => {
@@ -2559,14 +2566,16 @@ function StockScreen({ session, shop }) {
       }
     });
     const returnable = sale.items
-      .map((it) => ({ sku: it.sku, name: it.name, price: it.price, qty: Math.max(0, it.qty - (returned[it.sku] || 0)) }))
-      .filter((it) => it.qty > 0);
+      .map((it) => ({ sku: it.sku, name: it.name, price: it.price, maxQty: Math.max(0, it.qty - (returned[it.sku] || 0)) }))
+      .filter((it) => it.maxQty > 0)
+      .map((it) => ({ ...it, qty: it.maxQty, checked: true }));
     if (returnable.length === 0) {
       setOpError("По этой продаже уже всё возвращено.");
       setPostFlow(null);
       return;
     }
-    commitReturnFromSale(cp, sale.doc_number, returnable);
+    setPostFlow(null);
+    setReturnReview({ sale, rows: returnable });
   }
   function handlePaymentSelected(method) {
     commit(postFlow.type, flowCounterparty, method);
@@ -2574,7 +2583,9 @@ function StockScreen({ session, shop }) {
 
   // Returns exactly what was sold, at exactly the price it was sold for —
   // no cart, no discount, no manual price entry involved.
-  async function commitReturnFromSale(counterparty, saleDocNumber, returnItems) {
+  async function commitReturnFromSale(sale, returnItems) {
+    setReturnConfirming(true);
+    const counterparty = { id: sale.counterparty_id, name: sale.counterparty_name, kind: sale.counterparty_kind };
     const qty = returnItems.reduce((s, it) => s + it.qty, 0);
     const sum = returnItems.reduce((s, it) => s + it.qty * it.price, 0);
     try {
@@ -2591,7 +2602,7 @@ function StockScreen({ session, shop }) {
           payment_method: null,
           qty,
           sum,
-          comment: `Возврат по продаже ${saleDocNumber}`,
+          comment: `Возврат по продаже ${sale.doc_number}`,
           items: returnItems.map((it) => ({ sku: it.sku, name: it.name, qty: it.qty, price: it.price })),
         },
         session,
@@ -2605,12 +2616,13 @@ function StockScreen({ session, shop }) {
       }
       setNotice(`Возврат оформлен: ${qty} шт на ${sum.toLocaleString("ru-RU")} ₸`);
       setCart([]);
-      setPostFlow(null);
-      setFlowCounterparty(null);
+      setReturnReview(null);
       load();
       loadLog();
     } catch (e) {
       setOpError(e.message);
+    } finally {
+      setReturnConfirming(false);
     }
   }
 
@@ -3070,6 +3082,15 @@ function StockScreen({ session, shop }) {
       )}
       {postFlow?.step === "payment" && (
         <PaymentMethodModal onSelect={handlePaymentSelected} onClose={() => setPostFlow(null)} counterpartyKind={flowCounterparty?.kind} />
+      )}
+      {returnReview && (
+        <ReturnReviewModal
+          sale={returnReview.sale}
+          rows={returnReview.rows}
+          confirming={returnConfirming}
+          onConfirm={(selected) => commitReturnFromSale(returnReview.sale, selected)}
+          onClose={() => setReturnReview(null)}
+        />
       )}
 
       {printPreviewOpen && (
