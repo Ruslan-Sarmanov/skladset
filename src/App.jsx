@@ -3063,17 +3063,31 @@ function SettingsScreen({ session, shop, onShopUpdate }) {
     setChangingPlan(true);
     setError("");
     try {
-      const nextDate = new Date();
-      nextDate.setDate(nextDate.getDate() + (plan.id === "trial" ? 14 : 30));
+      let body;
+      if (plan.id === "trial") {
+        const nextDate = new Date();
+        nextDate.setDate(nextDate.getDate() + 14);
+        body = {
+          plan_id: "trial",
+          subscription_status: "Пробный период",
+          subscription_price: 0,
+          next_payment_date: nextDate.toISOString().slice(0, 10),
+        };
+      } else {
+        // Selecting a paid plan does NOT grant access by itself — it only
+        // records the request. next_payment_date (and therefore whether
+        // the shop is blocked) is untouched until an admin confirms the
+        // payment was actually received, via the admin panel.
+        body = {
+          plan_id: plan.id,
+          subscription_status: "Ожидает оплаты",
+          subscription_price: plan.price,
+        };
+      }
       const updated = await db("shops", {
         method: "PATCH",
         query: `?id=eq.${shop.id}`,
-        body: {
-          plan_id: plan.id,
-          subscription_status: plan.id === "trial" ? "Пробный период" : "Активна",
-          subscription_price: plan.price,
-          next_payment_date: nextDate.toISOString().slice(0, 10),
-        },
+        body,
         session,
         prefer: "return=representation",
       });
@@ -3224,8 +3238,8 @@ function SettingsScreen({ session, shop, onShopUpdate }) {
             style={{
               fontSize: 11,
               fontWeight: 700,
-              color: shop.plan_id === "trial" ? c.amberDark : c.green,
-              background: shop.plan_id === "trial" ? "#FDF3E2" : c.greenBg,
+              color: shop.subscription_status === "Ожидает оплаты" ? c.red : shop.plan_id === "trial" ? c.amberDark : c.green,
+              background: shop.subscription_status === "Ожидает оплаты" ? c.redBg : shop.plan_id === "trial" ? "#FDF3E2" : c.greenBg,
               padding: "4px 10px",
               borderRadius: 5,
             }}
@@ -3233,6 +3247,11 @@ function SettingsScreen({ session, shop, onShopUpdate }) {
             {shop.subscription_status}
           </span>
         </div>
+        {shop.subscription_status === "Ожидает оплаты" && (
+          <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 8, background: c.redBg, color: c.red, fontFamily: bodyFont, fontSize: 12.5 }}>
+            Тариф выбран, но доступ пока не продлён. Оплатите абонентскую плату и свяжитесь с администратором СкладСеть для подтверждения — доступ продлевается вручную после проверки оплаты.
+          </div>
+        )}
         <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel }}>
           {shop.plan_id === "trial" ? "Пробный доступ до" : "Следующее списание"}:{" "}
           <span style={{ fontWeight: 600, color: c.ink }}>{shop.next_payment_date || "—"}</span>
@@ -3262,15 +3281,17 @@ function SettingsScreen({ session, shop, onShopUpdate }) {
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 24 }}>
         {TARIFF_PLANS.map((plan) => {
-          const active = shop.plan_id === plan.id;
+          const selected = shop.plan_id === plan.id;
+          const pending = selected && shop.subscription_status === "Ожидает оплаты";
+          const active = selected && !pending;
           return (
             <div
               key={plan.id}
               style={{
                 flex: "1 1 160px",
                 minWidth: 160,
-                border: `1px solid ${active ? c.amberDark : c.border}`,
-                background: active ? "#FDF6EA" : c.panel,
+                border: `1px solid ${pending ? c.red : active ? c.amberDark : c.border}`,
+                background: pending ? c.redBg : active ? "#FDF6EA" : c.panel,
                 borderRadius: 10,
                 padding: 16,
               }}
@@ -3287,8 +3308,8 @@ function SettingsScreen({ session, shop, onShopUpdate }) {
                 disabled={active || changingPlan}
                 style={{
                   width: "100%",
-                  background: active ? c.border : c.amber,
-                  color: active ? c.steelLight : c.ink,
+                  background: pending ? c.red : active ? c.border : c.amber,
+                  color: pending ? "#fff" : active ? c.steelLight : c.ink,
                   border: "none",
                   borderRadius: 8,
                   padding: "8px 12px",
@@ -3298,7 +3319,7 @@ function SettingsScreen({ session, shop, onShopUpdate }) {
                   cursor: active ? "default" : "pointer",
                 }}
               >
-                {active ? "Текущий тариф" : "Выбрать"}
+                {pending ? "Ожидает оплаты" : active ? "Текущий тариф" : "Выбрать"}
               </button>
             </div>
           );
