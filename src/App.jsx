@@ -3010,9 +3010,9 @@ function ContactsScreen({ session, shop }) {
 // ⚠️ Впиши сюда свои реальные контакты — это единственное место,
 // где их нужно поменять, дальше они подставятся везде сами.
 const PLATFORM_CONTACT = {
-  phone: "+7 700 000 00 00",
-  whatsapp: "77000000000", // только цифры, для wa.me ссылки
-  email: "admin@skladset.kz",
+  phone: "+7 776 757 76 67",
+  whatsapp: "77767577667", // только цифры, для wa.me ссылки
+  email: "sarmanov.ru1989@gmail.com",
 };
 
 // ---- Shown to shop owners: active paid advertising banners from suppliers ----
@@ -3601,8 +3601,8 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
       )}
 
       {rows && rows.length > 0 && (
-        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowX: "auto" }}>
-          <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600, minWidth: 640 }}>
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowX: "hidden", overflowY: "auto", maxHeight: "62vh" }}>
+          <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600, position: "sticky", top: 0, zIndex: 1 }}>
             <span style={{ width: 68, flexShrink: 0, textAlign: "left", overflow: "hidden", whiteSpace: "nowrap" }}>Бренд</span>
             <span style={{ width: 100, flexShrink: 0, textAlign: "left", overflow: "hidden", whiteSpace: "nowrap" }}>Артикул</span>
             <span style={{ flex: 1, minWidth: 0, textAlign: "left", overflow: "hidden", whiteSpace: "nowrap" }}>Наименование</span>
@@ -3626,8 +3626,7 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
                 fontFamily: bodyFont,
                 fontSize: 12.5,
                 background: r.shop_id === shop.id ? "#FDF6EA" : "#fff",
-                minWidth: 640,
-              }}
+                              }}
             >
               <span style={{ width: 68, flexShrink: 0, textAlign: "left", color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.brand || "—"}</span>
               <span style={{ width: 100, flexShrink: 0, textAlign: "left", fontFamily: monoFont, fontWeight: 700, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.sku}</span>
@@ -4927,8 +4926,8 @@ function StockScreen({ session, shop }) {
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск по артикулу, субс/аналогу, названию, бренду или модели…" style={{ ...inputStyle, flex: 1 }} />
       </div>
 
-      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowX: "auto" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600, letterSpacing: 0.2, minWidth: 680 }}>
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowX: "hidden", overflowY: "auto", maxHeight: "62vh" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600, letterSpacing: 0.2, position: "sticky", top: 0, zIndex: 1 }}>
           <span onClick={() => toggleSort("brand")} style={{ width: 68, flexShrink: 0, textAlign: "left", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" }}>
             Бренд {sortArrow("brand")}
           </span>
@@ -4977,8 +4976,7 @@ function StockScreen({ session, shop }) {
               background: i % 2 === 1 ? c.cloud : "#fff",
               fontFamily: bodyFont,
               fontSize: 13,
-              minWidth: 680,
-            }}
+                          }}
           >
             <span style={{ width: 68, flexShrink: 0, textAlign: "left", color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.brand || "—"}</span>
             <span style={{ width: 100, flexShrink: 0, fontFamily: monoFont, fontWeight: 600, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.sku}</span>
