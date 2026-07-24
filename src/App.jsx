@@ -3602,17 +3602,17 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
 
       {rows && rows.length > 0 && (
         <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowX: "auto", overflowY: "hidden" }}>
-          <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600, minWidth: 900 }}>
-            <span style={{ width: 90, flexShrink: 0, textAlign: "left", overflow: "hidden", whiteSpace: "nowrap" }}>Бренд</span>
-            <span style={{ width: 130, flexShrink: 0, textAlign: "left", overflow: "hidden", whiteSpace: "nowrap" }}>Артикул</span>
+          <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600, minWidth: 640 }}>
+            <span style={{ width: 68, flexShrink: 0, textAlign: "left", overflow: "hidden", whiteSpace: "nowrap" }}>Бренд</span>
+            <span style={{ width: 100, flexShrink: 0, textAlign: "left", overflow: "hidden", whiteSpace: "nowrap" }}>Артикул</span>
             <span style={{ flex: 1, minWidth: 0, textAlign: "left", overflow: "hidden", whiteSpace: "nowrap" }}>Наименование</span>
-            <span onClick={() => toggleSort("qty")} style={{ width: 60, flexShrink: 0, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end", overflow: "hidden", whiteSpace: "nowrap" }}>
+            <span onClick={() => toggleSort("qty")} style={{ width: 48, flexShrink: 0, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end", overflow: "hidden", whiteSpace: "nowrap" }}>
               Кол. {sortArrow("qty")}
             </span>
-            <span onClick={() => toggleSort("price")} style={{ width: 100, flexShrink: 0, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end", overflow: "hidden", whiteSpace: "nowrap" }}>
+            <span onClick={() => toggleSort("price")} style={{ width: 84, flexShrink: 0, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end", overflow: "hidden", whiteSpace: "nowrap" }}>
               Цена, ₸ {sortArrow("price")}
             </span>
-            <span style={{ width: 190, flexShrink: 0, textAlign: "left", overflow: "hidden", whiteSpace: "nowrap" }}>Склад / магазин</span>
+            <span style={{ width: 150, flexShrink: 0, textAlign: "left", overflow: "hidden", whiteSpace: "nowrap" }}>Склад / магазин</span>
           </div>
           {displayRows.map((r, i) => (
             <div
@@ -3626,11 +3626,11 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
                 fontFamily: bodyFont,
                 fontSize: 12.5,
                 background: r.shop_id === shop.id ? "#FDF6EA" : "#fff",
-                minWidth: 900,
+                minWidth: 640,
               }}
             >
-              <span style={{ width: 90, flexShrink: 0, textAlign: "left", color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.brand || "—"}</span>
-              <span style={{ width: 130, flexShrink: 0, textAlign: "left", fontFamily: monoFont, fontWeight: 700, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.sku}</span>
+              <span style={{ width: 68, flexShrink: 0, textAlign: "left", color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.brand || "—"}</span>
+              <span style={{ width: 100, flexShrink: 0, textAlign: "left", fontFamily: monoFont, fontWeight: 700, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.sku}</span>
               <span style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
                 <span title={r.name} style={{ color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
                   {r.name}
@@ -3653,9 +3653,9 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
                   </span>
                 )}
               </span>
-              <span style={{ width: 60, flexShrink: 0, textAlign: "right", fontFamily: monoFont }}>{r.qty}</span>
-              <span style={{ width: 100, flexShrink: 0, textAlign: "right", fontFamily: monoFont, fontWeight: 700, color: c.amberDark }}>{r.price.toLocaleString("ru-RU")}</span>
-              <span style={{ width: 190, flexShrink: 0 }}>
+              <span style={{ width: 48, flexShrink: 0, textAlign: "right", fontFamily: monoFont }}>{r.qty}</span>
+              <span style={{ width: 84, flexShrink: 0, textAlign: "right", fontFamily: monoFont, fontWeight: 700, color: c.amberDark }}>{r.price.toLocaleString("ru-RU")}</span>
+              <span style={{ width: 150, flexShrink: 0 }}>
                 {r.shop_id === shop.id ? (
                   <span style={{ display: "flex", alignItems: "center", gap: 6, color: c.ink, fontWeight: 600 }}>
                     <span style={{ flexShrink: 0 }}>🏠</span>
@@ -4928,28 +4928,28 @@ function StockScreen({ session, shop }) {
       </div>
 
       <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowX: "auto", overflowY: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 16px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600, letterSpacing: 0.2, minWidth: 920 }}>
-          <span onClick={() => toggleSort("brand")} style={{ width: 90, flexShrink: 0, textAlign: "left", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600, letterSpacing: 0.2, minWidth: 680 }}>
+          <span onClick={() => toggleSort("brand")} style={{ width: 68, flexShrink: 0, textAlign: "left", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" }}>
             Бренд {sortArrow("brand")}
           </span>
-          <span onClick={() => toggleSort("sku")} style={{ width: 130, flexShrink: 0, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" }}>
+          <span onClick={() => toggleSort("sku")} style={{ width: 100, flexShrink: 0, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" }}>
             Артикул {sortArrow("sku")}
           </span>
-          <span onClick={() => toggleSort("alt_sku")} style={{ width: 110, flexShrink: 0, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" }}>
+          <span onClick={() => toggleSort("alt_sku")} style={{ width: 80, flexShrink: 0, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" }}>
             Субс/аналог {sortArrow("alt_sku")}
           </span>
           <span onClick={() => toggleSort("name")} style={{ flex: 1, minWidth: 0, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" }}>
             Наименование {sortArrow("name")}
           </span>
-          <span style={{ width: 90, flexShrink: 0, display: "flex", alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" }}>Модель</span>
-          <span onClick={() => toggleSort("qty")} style={{ width: 60, flexShrink: 0, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end", overflow: "hidden", whiteSpace: "nowrap" }}>
+          <span style={{ width: 70, flexShrink: 0, display: "flex", alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" }}>Модель</span>
+          <span onClick={() => toggleSort("qty")} style={{ width: 48, flexShrink: 0, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end", overflow: "hidden", whiteSpace: "nowrap" }}>
             Кол. {sortArrow("qty")}
           </span>
-          <span onClick={() => toggleSort("price")} style={{ width: 90, flexShrink: 0, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end", overflow: "hidden", whiteSpace: "nowrap" }}>
+          <span onClick={() => toggleSort("price")} style={{ width: 76, flexShrink: 0, textAlign: "right", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "flex-end", overflow: "hidden", whiteSpace: "nowrap" }}>
             Цена {sortArrow("price")}
           </span>
-          <span style={{ width: 24, flexShrink: 0 }} />
-          <span style={{ width: 28, flexShrink: 0 }} />
+          <span style={{ width: 22, flexShrink: 0 }} />
+          <span style={{ width: 26, flexShrink: 0 }} />
         </div>
 
         {items === null && (
@@ -4971,29 +4971,29 @@ function StockScreen({ session, shop }) {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 12,
-              padding: "13px 16px",
+              gap: 8,
+              padding: "12px 14px",
               borderTop: i === 0 ? "none" : `1px solid ${c.border}`,
               background: i % 2 === 1 ? c.cloud : "#fff",
               fontFamily: bodyFont,
               fontSize: 13,
-              minWidth: 920,
+              minWidth: 680,
             }}
           >
-            <span style={{ width: 90, flexShrink: 0, textAlign: "left", color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.brand || "—"}</span>
-            <span style={{ width: 130, flexShrink: 0, fontFamily: monoFont, fontWeight: 600, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.sku}</span>
-            <span style={{ width: 110, flexShrink: 0, fontFamily: monoFont, fontSize: 12, color: c.steel, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.alt_sku || "—"}</span>
+            <span style={{ width: 68, flexShrink: 0, textAlign: "left", color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.brand || "—"}</span>
+            <span style={{ width: 100, flexShrink: 0, fontFamily: monoFont, fontWeight: 600, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.sku}</span>
+            <span style={{ width: 80, flexShrink: 0, fontFamily: monoFont, fontSize: 12, color: c.steel, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.alt_sku || "—"}</span>
             <span title={it.name} style={{ flex: 1, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{it.name}</span>
-            <span title={it.model || ""} style={{ width: 90, flexShrink: 0, color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.model || "—"}</span>
-            <span style={{ width: 60, flexShrink: 0, textAlign: "right", fontFamily: monoFont, fontWeight: 600, color: it.qty <= it.min_qty ? c.red : c.ink }}>{it.qty}</span>
-            <span style={{ width: 90, flexShrink: 0, textAlign: "right", fontFamily: monoFont, color: c.amberDark, fontWeight: 700 }}>{it.price.toLocaleString("ru-RU")} ₸</span>
-            <button onClick={() => setFormMode(it)} style={{ width: 24, flexShrink: 0, background: "none", border: "none", color: c.steelLight, cursor: "pointer", padding: 0 }}>
+            <span title={it.model || ""} style={{ width: 70, flexShrink: 0, color: c.steel, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.model || "—"}</span>
+            <span style={{ width: 48, flexShrink: 0, textAlign: "right", fontFamily: monoFont, fontWeight: 600, color: it.qty <= it.min_qty ? c.red : c.ink }}>{it.qty}</span>
+            <span style={{ width: 76, flexShrink: 0, textAlign: "right", fontFamily: monoFont, color: c.amberDark, fontWeight: 700 }}>{it.price.toLocaleString("ru-RU")} ₸</span>
+            <button onClick={() => setFormMode(it)} style={{ width: 22, flexShrink: 0, background: "none", border: "none", color: c.steelLight, cursor: "pointer", padding: 0 }}>
               <Icon size={13}>✎</Icon>
             </button>
             <button
               onClick={() => addToCart(it)}
               title="Добавить в операцию"
-              style={{ width: 28, height: 28, borderRadius: 6, border: "none", background: c.amber, color: c.ink, cursor: "pointer", flexShrink: 0, fontWeight: 700, fontSize: 15 }}
+              style={{ width: 26, height: 26, borderRadius: 6, border: "none", background: c.amber, color: c.ink, cursor: "pointer", flexShrink: 0, fontWeight: 700, fontSize: 15 }}
             >
               +
             </button>
