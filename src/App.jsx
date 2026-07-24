@@ -3601,7 +3601,7 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
       )}
 
       {rows && rows.length > 0 && (
-        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowX: "hidden", overflowY: "auto", maxHeight: "62vh" }}>
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowX: "hidden", overflowY: "auto", maxHeight: 380 }}>
           <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600, position: "sticky", top: 0, zIndex: 1 }}>
             <span style={{ width: 68, flexShrink: 0, textAlign: "left", overflow: "hidden", whiteSpace: "nowrap" }}>Бренд</span>
             <span style={{ width: 100, flexShrink: 0, textAlign: "left", overflow: "hidden", whiteSpace: "nowrap" }}>Артикул</span>
@@ -4926,7 +4926,7 @@ function StockScreen({ session, shop }) {
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск по артикулу, субс/аналогу, названию, бренду или модели…" style={{ ...inputStyle, flex: 1 }} />
       </div>
 
-      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowX: "hidden", overflowY: "auto", maxHeight: "62vh" }}>
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowX: "hidden", overflowY: "auto", maxHeight: 380 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600, letterSpacing: 0.2, position: "sticky", top: 0, zIndex: 1 }}>
           <span onClick={() => toggleSort("brand")} style={{ width: 68, flexShrink: 0, textAlign: "left", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" }}>
             Бренд {sortArrow("brand")}
