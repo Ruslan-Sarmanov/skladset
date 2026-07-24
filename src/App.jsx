@@ -5160,11 +5160,260 @@ function StockScreen({ session, shop }) {
 }
 
 // ---- App shell: bootstraps the shop row for the logged-in user ----
+function shopIsBlocked(shop) {
+  if (!shop) return false;
+  if (shop.access_blocked) return true;
+  if (shop.next_payment_date && shop.next_payment_date < todayISO()) return true;
+  return false;
+}
+
+function AdminMarkPaidModal({ shop, onClose, onConfirm, saving }) {
+  const [days, setDays] = useState(30);
+  const base = shop.next_payment_date && shop.next_payment_date >= todayISO() ? shop.next_payment_date : todayISO();
+  const nextDate = new Date(base);
+  nextDate.setDate(nextDate.getDate() + Number(days || 0));
+  const nextDateIso = nextDate.toISOString().slice(0, 10);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(28,33,40,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 20 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: c.panel, borderRadius: 12, width: 380 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${c.border}` }}>
+          <span style={{ fontFamily: displayFont, fontSize: 15, fontWeight: 600, color: c.ink }}>Отметить оплату</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: c.steel }}>
+            <Icon size={17}>✕</Icon>
+          </button>
+        </div>
+        <div style={{ padding: 18 }}>
+          <div style={{ fontFamily: bodyFont, fontSize: 13, color: c.ink, marginBottom: 12 }}>{shop.name}</div>
+          <label style={fieldLabel}>Продлить на, дней</label>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            {[30, 90, 365].map((d) => (
+              <button
+                key={d}
+                onClick={() => setDays(d)}
+                style={{
+                  flex: 1,
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  border: `1px solid ${Number(days) === d ? c.amberDark : c.border}`,
+                  background: Number(days) === d ? "#FDF3E2" : "#fff",
+                  color: c.ink,
+                  fontFamily: bodyFont,
+                  fontWeight: 600,
+                  fontSize: 12.5,
+                  cursor: "pointer",
+                }}
+              >
+                {d} дн.
+              </button>
+            ))}
+          </div>
+          <input type="number" value={days} onFocus={(e) => e.target.select()} onChange={(e) => setDays(e.target.value)} style={{ ...inputStyle, marginBottom: 14 }} />
+          <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 16 }}>
+            Новая дата следующей оплаты: <strong style={{ color: c.ink }}>{nextDateIso}</strong>
+          </div>
+          <button onClick={() => onConfirm(nextDateIso)} disabled={saving} style={{ ...primaryBtn, width: "100%", opacity: saving ? 0.7 : 1 }}>
+            {saving ? <Spinner /> : "Подтвердить оплату и разблокировать"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminPanelScreen({ session, onExit }) {
+  const [shops, setShops] = useState(null);
+  const [error, setError] = useState("");
+  const [openId, setOpenId] = useState(null);
+  const [markPaidOpen, setMarkPaidOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [query, setQuery] = useState("");
+
+  async function load() {
+    setError("");
+    try {
+      const rows = await db("shops", { query: `?order=name.asc`, session });
+      setShops(rows);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line
+  }, []);
+
+  const openShop = (shops || []).find((s) => s.id === openId);
+
+  async function toggleBlock(shop) {
+    setSaving(true);
+    setError("");
+    try {
+      await db("shops", { method: "PATCH", query: `?id=eq.${shop.id}`, body: { access_blocked: !shop.access_blocked }, session, prefer: "return=minimal" });
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function markPaid(nextDateIso) {
+    setSaving(true);
+    setError("");
+    try {
+      await db("shops", {
+        method: "PATCH",
+        query: `?id=eq.${openShop.id}`,
+        body: { next_payment_date: nextDateIso, access_blocked: false, subscription_status: "Активна" },
+        session,
+        prefer: "return=minimal",
+      });
+      setMarkPaidOpen(false);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const filtered = (shops || []).filter((s) => !query.trim() || s.name.toLowerCase().includes(query.toLowerCase()));
+
+  return (
+    <div style={{ minHeight: "100vh", background: c.cloud, fontFamily: bodyFont, padding: "26px 32px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <div style={{ fontFamily: displayFont, fontSize: 22, fontWeight: 600, color: c.ink }}>🛡 Админ-панель</div>
+        <button onClick={onExit} style={{ background: "transparent", border: `1px solid ${c.border}`, borderRadius: 8, padding: "9px 14px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, color: c.ink, cursor: "pointer" }}>
+          ← Назад в мой магазин
+        </button>
+      </div>
+      <div style={{ fontFamily: bodyFont, fontSize: 13, color: c.steel, marginBottom: 18 }}>Все зарегистрированные магазины СкладСеть — статус подписки и доступ.</div>
+
+      {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14, maxWidth: 700 }}>{error}</div>}
+
+      {openShop ? (
+        <div style={{ maxWidth: 480 }}>
+          <button onClick={() => setOpenId(null)} style={{ background: "none", border: "none", color: c.steel, fontFamily: bodyFont, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: 12 }}>
+            ← К списку магазинов
+          </button>
+          <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 20 }}>
+            <div style={{ fontFamily: displayFont, fontSize: 17, fontWeight: 700, color: c.ink, marginBottom: 4 }}>{openShop.name}</div>
+            <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 16 }}>{openShop.store_address || "Адрес не указан"}</div>
+
+            <div style={{ display: "flex", gap: 20, marginBottom: 16 }}>
+              <div>
+                <div style={{ fontFamily: bodyFont, fontSize: 11, color: c.steel }}>Тариф</div>
+                <div style={{ fontFamily: bodyFont, fontWeight: 700, fontSize: 14, color: c.ink }}>{openShop.plan_id || "—"}</div>
+              </div>
+              <div>
+                <div style={{ fontFamily: bodyFont, fontSize: 11, color: c.steel }}>Статус</div>
+                <div style={{ fontFamily: bodyFont, fontWeight: 700, fontSize: 14, color: c.ink }}>{openShop.subscription_status || "—"}</div>
+              </div>
+              <div>
+                <div style={{ fontFamily: bodyFont, fontSize: 11, color: c.steel }}>Следующая оплата</div>
+                <div style={{ fontFamily: monoFont, fontWeight: 700, fontSize: 14, color: shopIsBlocked(openShop) ? c.red : c.ink }}>{openShop.next_payment_date || "—"}</div>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "10px 12px",
+                borderRadius: 8,
+                marginBottom: 16,
+                background: shopIsBlocked(openShop) ? c.redBg : c.greenBg,
+                color: shopIsBlocked(openShop) ? c.red : c.green,
+                fontFamily: bodyFont,
+                fontWeight: 700,
+                fontSize: 13,
+              }}
+            >
+              {shopIsBlocked(openShop) ? "🔒 Доступ заблокирован" : "✓ Доступ активен"}
+            </div>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setMarkPaidOpen(true)} style={{ ...primaryBtn, flex: 1 }}>
+                Отметить оплату
+              </button>
+              <button
+                onClick={() => toggleBlock(openShop)}
+                disabled={saving}
+                style={{
+                  flex: 1,
+                  background: openShop.access_blocked ? c.greenBg : c.redBg,
+                  color: openShop.access_blocked ? c.green : c.red,
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "10px 14px",
+                  fontFamily: bodyFont,
+                  fontWeight: 700,
+                  fontSize: 12.5,
+                  cursor: "pointer",
+                  opacity: saving ? 0.7 : 1,
+                }}
+              >
+                {openShop.access_blocked ? "Разблокировать вручную" : "Заблокировать вручную"}
+              </button>
+            </div>
+          </div>
+
+          {markPaidOpen && <AdminMarkPaidModal shop={openShop} saving={saving} onClose={() => setMarkPaidOpen(false)} onConfirm={markPaid} />}
+        </div>
+      ) : (
+        <>
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск по названию магазина…" style={{ ...inputStyle, maxWidth: 340, marginBottom: 14 }} />
+          <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden", maxWidth: 900 }}>
+            <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+              <span style={{ flex: 1 }}>Магазин</span>
+              <span style={{ width: 100 }}>Тариф</span>
+              <span style={{ width: 130 }}>Статус</span>
+              <span style={{ width: 110 }}>След. оплата</span>
+              <span style={{ width: 100 }}>Доступ</span>
+            </div>
+            {shops === null && (
+              <div style={{ display: "flex", gap: 8, padding: 20, color: c.steel, fontSize: 13 }}>
+                <Spinner /> Загружаю магазины…
+              </div>
+            )}
+            {shops !== null && filtered.length === 0 && <div style={{ padding: 18, fontFamily: bodyFont, fontSize: 13.5, color: c.steel }}>Магазинов не найдено.</div>}
+            {filtered.map((s, i) => (
+              <div key={s.id} onClick={() => setOpenId(s.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, cursor: "pointer", fontFamily: bodyFont, fontSize: 13 }}>
+                <span style={{ flex: 1, color: c.ink, fontWeight: 600 }}>{s.name}</span>
+                <span style={{ width: 100, color: c.steel }}>{s.plan_id || "—"}</span>
+                <span style={{ width: 130, color: c.steel }}>{s.subscription_status || "—"}</span>
+                <span style={{ width: 110, fontFamily: monoFont, color: shopIsBlocked(s) ? c.red : c.steel }}>{s.next_payment_date || "—"}</span>
+                <span style={{ width: 100 }}>
+                  <span
+                    style={{
+                      fontSize: 10.5,
+                      fontWeight: 700,
+                      padding: "3px 8px",
+                      borderRadius: 4,
+                      color: shopIsBlocked(s) ? c.red : c.green,
+                      background: shopIsBlocked(s) ? c.redBg : c.greenBg,
+                    }}
+                  >
+                    {shopIsBlocked(s) ? "Заблокирован" : "Активен"}
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [session, setSession] = useState(null);
   const [shop, setShop] = useState(null);
   const [bootError, setBootError] = useState("");
   const [tab, setTab] = useState("dash");
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminMode, setAdminMode] = useState(false);
 
   useEffect(() => {
     if (!session) return;
@@ -5186,10 +5435,21 @@ export default function App() {
       } catch (e) {
         setBootError(e.message);
       }
+      try {
+        const adminRows = await db("platform_admins", { query: `?email=eq.${encodeURIComponent(session.user.email)}`, session });
+        setIsAdmin(adminRows.length > 0);
+      } catch (e) {
+        // platform_admins table may not exist yet — treat as not admin
+        setIsAdmin(false);
+      }
     })();
   }, [session]);
 
   if (!session) return <AuthScreen onSignedIn={setSession} />;
+
+  if (adminMode) {
+    return <AdminPanelScreen session={session} onExit={() => setAdminMode(false)} />;
+  }
 
   if (bootError) {
     return (
@@ -5213,6 +5473,29 @@ export default function App() {
     );
   }
 
+  if (shopIsBlocked(shop) && !isAdmin) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: c.cloud, fontFamily: bodyFont, padding: 20 }}>
+        <div style={{ maxWidth: 440, background: c.panel, border: `1px solid ${c.border}`, borderRadius: 12, padding: 28, textAlign: "center" }}>
+          <div style={{ fontSize: 32, marginBottom: 10 }}>🔒</div>
+          <div style={{ fontFamily: displayFont, fontSize: 18, fontWeight: 700, color: c.ink, marginBottom: 8 }}>Подписка приостановлена</div>
+          <div style={{ fontFamily: bodyFont, fontSize: 13.5, color: c.steel, marginBottom: 16, lineHeight: 1.5 }}>
+            Доступ к «{shop.name}» временно ограничен — истёк срок оплаты{shop.next_payment_date ? ` (${shop.next_payment_date})` : ""}. Свяжитесь с администратором СкладСеть, чтобы продлить подписку.
+          </div>
+          <button
+            onClick={() => {
+              setSession(null);
+              setShop(null);
+            }}
+            style={{ background: "transparent", border: `1px solid ${c.border}`, borderRadius: 8, padding: "9px 16px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, color: c.ink, cursor: "pointer" }}
+          >
+            Выйти
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: c.cloud, fontFamily: bodyFont }}>
       <aside style={{ width: 220, background: c.ink, padding: "22px 14px", display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
@@ -5220,6 +5503,14 @@ export default function App() {
           <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 17, color: "#fff" }}>СкладСеть</div>
           <div style={{ fontFamily: bodyFont, fontSize: 11.5, color: c.steelLight, marginTop: 2 }}>{shop.name || "Мой магазин"}</div>
         </div>
+        {isAdmin && (
+          <button
+            onClick={() => setAdminMode(true)}
+            style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 14px", borderRadius: 8, border: `1px dashed #3A414D`, background: "transparent", color: "#B8C0CC", fontFamily: bodyFont, fontSize: 13, fontWeight: 600, cursor: "pointer", marginBottom: 8, textAlign: "left" }}
+          >
+            🛡 Админ-панель
+          </button>
+        )}
         {[
           { key: "dash", label: "Дашборд", icon: LayoutGrid },
           { key: "stock", label: "Склад", icon: Boxes },
