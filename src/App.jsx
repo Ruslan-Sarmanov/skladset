@@ -256,6 +256,7 @@ function DashboardScreen({ session, shop }) {
 
   return (
     <div>
+      <AdBannerStrip session={session} />
       {error && (
         <div style={{ display: "flex", gap: 8, background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>
           <Icon size={15}>⚠</Icon> {error}
@@ -401,10 +402,7 @@ function AuthScreen({ onSignedIn }) {
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: c.cloud, fontFamily: bodyFont }}>
       <div style={{ width: 380, background: c.panel, border: `1px solid ${c.border}`, borderRadius: 12, padding: 28 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-          <BrandLogo variant="light" height={32} />
-          <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 18, color: c.ink }}>СкладCRM</div>
-        </div>
+        <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 20, color: c.ink, marginBottom: 4 }}>СкладCRM</div>
         <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 20 }}>
           {mode === "login" ? "Вход в ваш магазин" : mode === "signup" ? "Регистрация нового магазина" : "Восстановление пароля"}
         </div>
@@ -3017,6 +3015,65 @@ const PLATFORM_CONTACT = {
   email: "admin@skladset.kz",
 };
 
+// ---- Shown to shop owners: active paid advertising banners from suppliers ----
+function AdBannerStrip({ session }) {
+  const [banners, setBanners] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const today = todayISO();
+        const rows = await db("ad_banners", {
+          query: `?active=eq.true&or=(starts_at.is.null,starts_at.lte.${today})&order=created_at.desc&limit=5`,
+          session,
+        });
+        const live = (rows || []).filter((b) => !b.ends_at || b.ends_at >= today);
+        setBanners(live);
+      } catch (e) {
+        setBanners([]);
+      }
+    })();
+  }, []);
+
+  if (!banners || banners.length === 0) return null;
+  const b = banners[0];
+
+  const content = (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        background: c.panel,
+        border: `1px solid ${c.border}`,
+        borderRadius: 10,
+        padding: "12px 16px",
+        marginBottom: 18,
+        cursor: b.link_url ? "pointer" : "default",
+      }}
+    >
+      {b.image_url ? (
+        <img src={b.image_url} alt="" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
+      ) : (
+        <div style={{ width: 48, height: 48, borderRadius: 8, background: c.cloud, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 20 }}>📢</div>
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: bodyFont, fontWeight: 700, fontSize: 13.5, color: c.ink }}>{b.title}</div>
+        {b.subtitle && <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginTop: 2 }}>{b.subtitle}</div>}
+      </div>
+      <span style={{ fontSize: 10, fontWeight: 700, color: c.steelLight, background: c.cloud, padding: "2px 8px", borderRadius: 4, flexShrink: 0 }}>Реклама</span>
+    </div>
+  );
+
+  return b.link_url ? (
+    <a href={b.link_url} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+      {content}
+    </a>
+  ) : (
+    content
+  );
+}
+
 const TARIFF_PLANS = [
   { id: "trial", name: "Пробный", price: 0, limit: "до 50 позиций", note: "14 дней бесплатно, затем выбор тарифа" },
   { id: "start", name: "Старт", price: 6900, limit: "до 150 позиций" },
@@ -5439,6 +5496,226 @@ function AdminMarkPaidModal({ shop, onClose, onConfirm, saving }) {
   );
 }
 
+// ---- Admin: create/manage paid advertising banners for suppliers ----
+function AdBannersAdmin({ session }) {
+  const emptyForm = { title: "", subtitle: "", advertiser_name: "", image_url: "", link_url: "", active: true, starts_at: "", ends_at: "" };
+  const [banners, setBanners] = useState(null);
+  const [error, setError] = useState("");
+  const [editing, setEditing] = useState(null); // null | "new" | banner object
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    setError("");
+    try {
+      const rows = await db("ad_banners", { query: `?order=created_at.desc`, session });
+      setBanners(rows);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line
+  }, []);
+
+  function openNew() {
+    setForm(emptyForm);
+    setEditing("new");
+  }
+  function openEdit(b) {
+    setForm({
+      title: b.title || "",
+      subtitle: b.subtitle || "",
+      advertiser_name: b.advertiser_name || "",
+      image_url: b.image_url || "",
+      link_url: b.link_url || "",
+      active: b.active,
+      starts_at: b.starts_at || "",
+      ends_at: b.ends_at || "",
+    });
+    setEditing(b);
+  }
+  async function save() {
+    if (!form.title.trim()) return;
+    setSaving(true);
+    setError("");
+    try {
+      const body = {
+        title: form.title,
+        subtitle: form.subtitle,
+        advertiser_name: form.advertiser_name,
+        image_url: form.image_url,
+        link_url: form.link_url,
+        active: form.active,
+        starts_at: form.starts_at || null,
+        ends_at: form.ends_at || null,
+      };
+      if (editing === "new") {
+        await db("ad_banners", { method: "POST", body, session, prefer: "return=minimal" });
+      } else {
+        await db("ad_banners", { method: "PATCH", query: `?id=eq.${editing.id}`, body, session, prefer: "return=minimal" });
+      }
+      setEditing(null);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function remove(id) {
+    setSaving(true);
+    try {
+      await db("ad_banners", { method: "DELETE", query: `?id=eq.${id}`, session, prefer: "return=minimal" });
+      setEditing(null);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function toggleActive(b) {
+    try {
+      await db("ad_banners", { method: "PATCH", query: `?id=eq.${b.id}`, body: { active: !b.active }, session, prefer: "return=minimal" });
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  function isLive(b) {
+    const today = todayISO();
+    if (!b.active) return false;
+    if (b.starts_at && b.starts_at > today) return false;
+    if (b.ends_at && b.ends_at < today) return false;
+    return true;
+  }
+
+  if (editing) {
+    return (
+      <div style={{ maxWidth: 480 }}>
+        <button onClick={() => setEditing(null)} style={{ background: "none", border: "none", color: c.steel, fontFamily: bodyFont, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: 12 }}>
+          ← К списку баннеров
+        </button>
+        {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 20 }}>
+          <div style={{ marginBottom: 12 }}>
+            <label style={fieldLabel}>Заголовок</label>
+            <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Например, «Тормозные колодки со скидкой 15%»" style={inputStyle} />
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={fieldLabel}>Подзаголовок (необязательно)</label>
+            <input value={form.subtitle} onChange={(e) => setForm({ ...form, subtitle: e.target.value })} placeholder="Короткое пояснение под заголовком" style={inputStyle} />
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={fieldLabel}>Рекламодатель</label>
+            <input value={form.advertiser_name} onChange={(e) => setForm({ ...form, advertiser_name: e.target.value })} placeholder="Название компании-поставщика" style={inputStyle} />
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={fieldLabel}>Ссылка на картинку (необязательно)</label>
+            <input value={form.image_url} onChange={(e) => setForm({ ...form, image_url: e.target.value })} placeholder="https://…" style={inputStyle} />
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={fieldLabel}>Куда ведёт баннер (ссылка)</label>
+            <input value={form.link_url} onChange={(e) => setForm({ ...form, link_url: e.target.value })} placeholder="https://…" style={inputStyle} />
+          </div>
+          <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+            <div style={{ flex: 1 }}>
+              <label style={fieldLabel}>Показывать с</label>
+              <input type="date" value={form.starts_at} onChange={(e) => setForm({ ...form, starts_at: e.target.value })} style={inputStyle} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={fieldLabel}>Показывать по</label>
+              <input type="date" value={form.ends_at} onChange={(e) => setForm({ ...form, ends_at: e.target.value })} style={inputStyle} />
+            </div>
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18, cursor: "pointer" }}>
+            <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />
+            <span style={{ fontFamily: bodyFont, fontSize: 13, color: c.ink }}>Активен (показывать в приложении)</span>
+          </label>
+          <div style={{ display: "flex", gap: 8, justifyContent: "space-between" }}>
+            {editing !== "new" && (
+              <button onClick={() => remove(editing.id)} disabled={saving} style={{ background: c.redBg, color: c.red, border: "none", borderRadius: 8, padding: "10px 14px", fontFamily: bodyFont, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>
+                Удалить
+              </button>
+            )}
+            <button onClick={save} disabled={saving || !form.title.trim()} style={{ ...primaryBtn, marginLeft: "auto", opacity: saving || !form.title.trim() ? 0.6 : 1 }}>
+              {saving ? <Spinner /> : "Сохранить"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ fontFamily: bodyFont, fontSize: 13, color: c.steel, maxWidth: 500 }}>
+          Рекламные баннеры показываются всем владельцам магазинов в приложении — платная реклама для поставщиков, которые хотят заявить о себе.
+        </div>
+        <button onClick={openNew} style={primaryBtn}>
+          <Icon size={15}>+</Icon> Новый баннер
+        </button>
+      </div>
+
+      {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
+
+      {banners === null && (
+        <div style={{ display: "flex", gap: 8, color: c.steel, fontSize: 13, padding: 12 }}>
+          <Spinner /> Загружаю баннеры…
+        </div>
+      )}
+      {banners !== null && banners.length === 0 && (
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 20, color: c.steel, fontSize: 13.5, maxWidth: 600 }}>Баннеров пока нет.</div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 700 }}>
+        {(banners || []).map((b) => (
+          <div key={b.id} style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 14, display: "flex", alignItems: "center", gap: 12 }}>
+            {b.image_url ? (
+              <img src={b.image_url} alt="" style={{ width: 60, height: 60, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
+            ) : (
+              <div style={{ width: 60, height: 60, borderRadius: 8, background: c.cloud, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 20 }}>📢</div>
+            )}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontFamily: bodyFont, fontWeight: 700, fontSize: 13.5, color: c.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title}</div>
+              <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {b.advertiser_name || "—"}
+                {(b.starts_at || b.ends_at) && ` · ${b.starts_at || "…"} — ${b.ends_at || "…"}`}
+              </div>
+            </div>
+            <span
+              style={{
+                fontSize: 10.5,
+                fontWeight: 700,
+                padding: "3px 8px",
+                borderRadius: 4,
+                flexShrink: 0,
+                color: isLive(b) ? c.green : c.steel,
+                background: isLive(b) ? c.greenBg : c.cloud,
+              }}
+            >
+              {isLive(b) ? "Показывается" : b.active ? "Ждёт даты" : "Выключен"}
+            </span>
+            <button
+              onClick={() => toggleActive(b)}
+              title={b.active ? "Выключить" : "Включить"}
+              style={{ flexShrink: 0, background: "transparent", border: `1px solid ${c.border}`, borderRadius: 6, padding: "6px 10px", fontFamily: bodyFont, fontSize: 11.5, fontWeight: 600, color: c.ink, cursor: "pointer" }}
+            >
+              {b.active ? "Выкл" : "Вкл"}
+            </button>
+            <button onClick={() => openEdit(b)} style={{ flexShrink: 0, background: "transparent", border: `1px solid ${c.border}`, borderRadius: 6, padding: "6px 10px", fontFamily: bodyFont, fontSize: 11.5, fontWeight: 600, color: c.ink, cursor: "pointer" }}>
+              Изменить
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AdminPanelScreen({ session, onExit }) {
   const [shops, setShops] = useState(null);
   const [error, setError] = useState("");
@@ -5452,6 +5729,7 @@ function AdminPanelScreen({ session, onExit }) {
   const [accessFilter, setAccessFilter] = useState("all"); // "all" | "active" | "blocked"
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [panelTab, setPanelTab] = useState("shops"); // "shops" | "ads"
 
   async function downloadShopPriceList(shop) {
     setDownloadingId(shop.id);
@@ -5563,7 +5841,34 @@ function AdminPanelScreen({ session, onExit }) {
 
       {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14, maxWidth: 700 }}>{error}</div>}
 
-      {openShop ? (
+      <div style={{ display: "flex", gap: 6, marginBottom: 18 }}>
+        {[
+          { key: "shops", label: "Магазины" },
+          { key: "ads", label: "Реклама" },
+        ].map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setPanelTab(t.key)}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 8,
+              border: `1px solid ${panelTab === t.key ? c.amberDark : c.border}`,
+              background: panelTab === t.key ? "#FDF3E2" : "#fff",
+              color: c.ink,
+              fontFamily: bodyFont,
+              fontWeight: 600,
+              fontSize: 12.5,
+              cursor: "pointer",
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {panelTab === "ads" ? (
+        <AdBannersAdmin session={session} />
+      ) : openShop ? (
         <div style={{ maxWidth: 480 }}>
           <button onClick={() => setOpenId(null)} style={{ background: "none", border: "none", color: c.steel, fontFamily: bodyFont, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: 12 }}>
             ← К списку магазинов
