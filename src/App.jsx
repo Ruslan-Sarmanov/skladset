@@ -163,6 +163,20 @@ function printDocument(title, bodyHtml) {
   .muted { color: #4A5568; font-size: 12px; margin-top: 3px; }
   .doc-title { font-size: 14px; font-weight: 700; text-align: right; }
   tfoot td { background: #F3F4F7; font-weight: 700; font-size: 14px; }
+  .center { text-align: center; }
+  .inv-title { font-size: 20px; font-weight: 700; }
+  .inv-sub { font-size: 13px; margin-top: 2px; }
+  .inv-rule { border-top: 2px solid #1C2128; margin: 12px 0 14px; }
+  .inv-row { display: flex; gap: 10px; font-size: 13px; margin-bottom: 6px; }
+  .inv-label { width: 100px; flex-shrink: 0; font-weight: 700; }
+  .inv-total { text-align: right; font-size: 15px; margin-top: 4px; }
+  .inv-summary { font-weight: 700; font-style: italic; font-size: 12.5px; margin-top: 14px; }
+  .inv-signs { display: flex; gap: 60px; margin-top: 46px; }
+  .sign-block { flex: 1; }
+  .sign-row { display: flex; align-items: flex-end; gap: 8px; font-size: 13px; margin-bottom: 3px; }
+  .sign-line { flex: 1; border-bottom: 1px solid #1C2128; height: 18px; }
+  .sign-caption { display: flex; justify-content: space-between; font-size: 10px; color: #4A5568; padding: 0 6px; }
+  .sign-mp { margin-top: 10px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -174,6 +188,110 @@ ${bodyHtml}
   setTimeout(() => {
     w.print();
   }, 300);
+}
+
+const RU_MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+function formatDateRu(iso) {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return `${d} ${RU_MONTHS[m - 1]} ${y} г.`;
+}
+
+// Clean накладная for retail (физ.лицо) sales — matches the paper layout
+// from the person's day job: title + date, "Поставщик"/"Покупатель" rows,
+// a flat item table (no bin/location column — this app doesn't track
+// shelf locations), totals, and a signature block. No screen preview —
+// clicking the button goes straight to the browser print dialog.
+function printSaleInvoice(sale, shop) {
+  const items = sale.items || [];
+  const rows = items
+    .map(
+      (it, i) => `<tr>
+  <td class="center mono">${i + 1}</td>
+  <td class="mono">${it.sku}</td>
+  <td>${it.name}</td>
+  <td class="right mono">${it.qty}</td>
+  <td class="center">шт</td>
+  <td class="right mono">${it.price.toLocaleString("ru-RU")}</td>
+  <td class="right mono"><strong>${(it.qty * it.price).toLocaleString("ru-RU")}</strong></td>
+</tr>`
+    )
+    .join("");
+  const subtitle = sale.type === "Продажа" ? "(Продажа покупателю)" : "";
+  printDocument(
+    `${sale.type} № ${sale.doc_number}`,
+    `
+<div class="inv-title">${sale.type} № ${sale.doc_number} от ${formatDateRu(sale.date)}</div>
+${subtitle ? `<div class="inv-sub">${subtitle}</div>` : ""}
+<div class="inv-rule"></div>
+<div class="inv-row"><span class="inv-label">Поставщик</span><span>${shop.name || "Магазин"}${shop.store_address ? `, ${shop.store_address}` : ""}</span></div>
+<div class="inv-row"><span class="inv-label">Покупатель</span><span>${sale.counterparty_name || "Розничный покупатель"} (Физ.лицо)</span></div>
+<table>
+  <thead>
+    <tr>
+      <th class="center" style="width:34px;">№</th>
+      <th style="width:100px;">Код</th>
+      <th>Товар, услуга</th>
+      <th class="right" style="width:60px;">Кол-во</th>
+      <th class="center" style="width:40px;">Ед.</th>
+      <th class="right" style="width:90px;">Цена</th>
+      <th class="right" style="width:100px;">Сумма</th>
+    </tr>
+  </thead>
+  <tbody>${rows}</tbody>
+</table>
+<div class="inv-total">Итого: <strong>${sale.sum.toLocaleString("ru-RU")} ₸</strong></div>
+<div class="inv-summary">Всего наименований ${items.length}, на сумму ${sale.sum.toLocaleString("ru-RU")} ₸</div>
+<div class="inv-signs">
+  <div class="sign-block">
+    <div class="sign-row"><span>Отпустил:</span><span class="sign-line"></span></div>
+    <div class="sign-caption"><span>подпись</span><span>расшифровка подписи</span></div>
+  </div>
+  <div class="sign-block">
+    <div class="sign-row"><span>Получил:</span><span class="sign-line"></span></div>
+    <div class="sign-caption"><span>подпись</span><span>расшифровка подписи</span></div>
+    <div class="sign-mp">М.П.</div>
+  </div>
+</div>
+`
+  );
+}
+
+// Fuller layout still used for Юрлицо counterparties for now — until a
+// proper official-requisites (БИН/банк/НДС) invoice is built, this
+// generic template continues to apply to them.
+function printSaleInvoiceGeneric(sale, shop) {
+  printDocument(
+    `${sale.type} № ${sale.doc_number}`,
+    `
+<div class="header">
+  <div>
+    <img src="${LOGO_LIGHT}" alt="4auto.kz" style="height:28px;width:auto;display:block;margin-bottom:8px;" />
+    <div class="shop-name">${shop.name || "Магазин"}</div>
+    ${shop.store_address ? `<div class="muted">${shop.store_address}</div>` : ""}
+    ${shop.phones && shop.phones.filter((p) => p && p.trim()).length ? `<div class="muted">${shop.phones.filter((p) => p && p.trim()).join(" · ")}</div>` : ""}
+  </div>
+  <div>
+    <div class="doc-title">${sale.type} № ${sale.doc_number}</div>
+    <div class="muted">${sale.date}</div>
+    <div class="muted">Получатель: ${sale.counterparty_name}</div>
+  </div>
+</div>
+<table>
+  <thead><tr><th>Артикул</th><th>Наименование</th><th class="right">Кол.</th><th class="right">Цена</th><th class="right">Сумма</th></tr></thead>
+  <tbody>
+    ${(sale.items || [])
+      .map(
+        (it) =>
+          `<tr><td class="mono">${it.sku}</td><td>${it.name}</td><td class="right mono">${it.qty}</td><td class="right mono">${it.price.toLocaleString("ru-RU")}</td><td class="right mono"><strong>${(it.qty * it.price).toLocaleString("ru-RU")}</strong></td></tr>`
+      )
+      .join("")}
+  </tbody>
+  <tfoot><tr><td colspan="4">Итого</td><td class="right mono">${sale.sum.toLocaleString("ru-RU")} ₸</td></tr></tfoot>
+</table>
+`
+  );
 }
 
 // Computes per-line discount and proportionally distributes the manual
@@ -3917,7 +4035,6 @@ function SalesLogPanel({ salesLog, shop, session, stockItems, onCommitted }) {
   const [dateTo, setDateTo] = useState(todayISO());
   const [skuQuery, setSkuQuery] = useState("");
   const [openId, setOpenId] = useState(null);
-  const [printOpen, setPrintOpen] = useState(false);
   const [reviewRows, setReviewRows] = useState(null);
   const [returning, setReturning] = useState(false);
   const [returnError, setReturnError] = useState("");
@@ -4079,7 +4196,7 @@ function SalesLogPanel({ salesLog, shop, session, stockItems, onCommitted }) {
                 <span style={{ display: "flex", alignItems: "center", fontFamily: bodyFont, fontSize: 12, color: c.steel }}>Все позиции уже возвращены</span>
               )}
               <button
-                onClick={() => setPrintOpen(true)}
+                onClick={() => (opened.counterparty_kind === "Юрлицо" ? printSaleInvoiceGeneric(opened, shop) : printSaleInvoice(opened, shop))}
                 style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", color: c.ink, border: `1px solid ${c.border}`, borderRadius: 8, padding: "8px 14px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, cursor: "pointer" }}
               >
                 🖨 Печать накладной
@@ -4119,120 +4236,6 @@ function SalesLogPanel({ salesLog, shop, session, stockItems, onCommitted }) {
           )}
         </div>
 
-        {printOpen && (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(28,33,40,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }} onClick={() => setPrintOpen(false)}>
-            <style>{`
-              @media print {
-                body * { visibility: hidden; }
-                #print-area-doc, #print-area-doc * { visibility: visible; }
-                #print-area-doc { position: absolute; left: 0; top: 0; width: 100%; max-width: 180mm; margin: 0 auto; padding: 0; box-shadow: none; border: none; box-sizing: border-box; }
-                .no-print { display: none !important; }
-                @page { size: A4; margin: 18mm; }
-              }
-            `}</style>
-            <div onClick={(e) => e.stopPropagation()} style={{ background: c.panel, borderRadius: 12, width: 520, maxHeight: "85vh", overflowY: "auto" }}>
-              <div className="no-print" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${c.border}` }}>
-                <span style={{ fontFamily: displayFont, fontSize: 15, fontWeight: 600, color: c.ink }}>Накладная</span>
-                <button onClick={() => setPrintOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", color: c.steel }}>
-                  <Icon size={17}>✕</Icon>
-                </button>
-              </div>
-
-              <div id="print-area-doc" style={{ padding: 24 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18, paddingBottom: 14, borderBottom: `2px solid ${c.ink}` }}>
-                  <div>
-                    <div style={{ fontFamily: displayFont, fontSize: 19, fontWeight: 700, color: c.ink }}>{shop.name || "Магазин"}</div>
-                    {shop.store_address && <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginTop: 3 }}>{shop.store_address}</div>}
-                    {shop.phones && shop.phones.filter((p) => p && p.trim()).length > 0 && (
-                      <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginTop: 2 }}>{shop.phones.filter((p) => p && p.trim()).join(" · ")}</div>
-                    )}
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontFamily: displayFont, fontSize: 14, fontWeight: 700, color: c.ink }}>Накладная № {opened.doc_number}</div>
-                    <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginTop: 3 }}>{opened.date}</div>
-                    <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginTop: 2 }}>Получатель: {opened.counterparty_name}</div>
-                  </div>
-                </div>
-
-                <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", marginBottom: 16, fontFamily: bodyFont, fontSize: 12.5 }}>
-                  <colgroup>
-                    <col style={{ width: "22%" }} />
-                    <col />
-                    <col style={{ width: "12%" }} />
-                    <col style={{ width: "16%" }} />
-                    <col style={{ width: "18%" }} />
-                  </colgroup>
-                  <thead>
-                    <tr style={{ background: c.cloud, color: c.steel, fontSize: 11, fontWeight: 700 }}>
-                      <th style={{ textAlign: "left", padding: "8px 10px", border: `1px solid ${c.border}` }}>Артикул</th>
-                      <th style={{ textAlign: "left", padding: "8px 10px", border: `1px solid ${c.border}` }}>Наименование</th>
-                      <th style={{ textAlign: "right", padding: "8px 10px", border: `1px solid ${c.border}` }}>Кол.</th>
-                      <th style={{ textAlign: "right", padding: "8px 10px", border: `1px solid ${c.border}` }}>Цена</th>
-                      <th style={{ textAlign: "right", padding: "8px 10px", border: `1px solid ${c.border}` }}>Сумма</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(opened.items || []).map((it, i) => (
-                      <tr key={i}>
-                        <td style={{ padding: "7px 10px", border: `1px solid ${c.border}`, fontFamily: monoFont, color: c.steel, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.sku}</td>
-                        <td style={{ padding: "7px 10px", border: `1px solid ${c.border}`, overflow: "hidden", textOverflow: "ellipsis" }}>{it.name}</td>
-                        <td style={{ padding: "7px 10px", border: `1px solid ${c.border}`, textAlign: "right", fontFamily: monoFont }}>{it.qty}</td>
-                        <td style={{ padding: "7px 10px", border: `1px solid ${c.border}`, textAlign: "right", fontFamily: monoFont }}>{it.price.toLocaleString("ru-RU")}</td>
-                        <td style={{ padding: "7px 10px", border: `1px solid ${c.border}`, textAlign: "right", fontFamily: monoFont, fontWeight: 700 }}>{(it.qty * it.price).toLocaleString("ru-RU")}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{ background: c.cloud, fontWeight: 700, fontSize: 14 }}>
-                      <td colSpan={4} style={{ padding: "10px", border: `1px solid ${c.border}` }}>Итого</td>
-                      <td style={{ padding: "10px", border: `1px solid ${c.border}`, textAlign: "right", fontFamily: monoFont }}>{opened.sum.toLocaleString("ru-RU")} ₸</td>
-                    </tr>
-                  </tfoot>
-                </table>
-
-                <div className="no-print">
-                  <button
-                    onClick={() =>
-                      printDocument(
-                        `Накладная № ${opened.doc_number}`,
-                        `
-<div class="header">
-  <div>
-    <img src="${LOGO_LIGHT}" alt="4auto.kz" style="height:28px;width:auto;display:block;margin-bottom:8px;" />
-    <div class="shop-name">${shop.name || "Магазин"}</div>
-    ${shop.store_address ? `<div class="muted">${shop.store_address}</div>` : ""}
-    ${shop.phones && shop.phones.filter((p) => p && p.trim()).length ? `<div class="muted">${shop.phones.filter((p) => p && p.trim()).join(" · ")}</div>` : ""}
-  </div>
-  <div>
-    <div class="doc-title">Накладная № ${opened.doc_number}</div>
-    <div class="muted">${opened.date}</div>
-    <div class="muted">Получатель: ${opened.counterparty_name}</div>
-  </div>
-</div>
-<table>
-  <thead><tr><th>Артикул</th><th>Наименование</th><th class="right">Кол.</th><th class="right">Цена</th><th class="right">Сумма</th></tr></thead>
-  <tbody>
-    ${(opened.items || [])
-      .map(
-        (it) =>
-          `<tr><td class="mono">${it.sku}</td><td>${it.name}</td><td class="right mono">${it.qty}</td><td class="right mono">${it.price.toLocaleString("ru-RU")}</td><td class="right mono"><strong>${(it.qty * it.price).toLocaleString("ru-RU")}</strong></td></tr>`
-      )
-      .join("")}
-  </tbody>
-  <tfoot><tr><td colspan="4">Итого</td><td class="right mono">${opened.sum.toLocaleString("ru-RU")} ₸</td></tr></tfoot>
-</table>
-`
-                      )
-                    }
-                    style={{ ...primaryBtn, width: "100%" }}
-                  >
-                    🖨 Печать
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
         {reviewRows && (
           <ReturnReviewModal sale={opened} rows={reviewRows} confirming={returning} onConfirm={(selected) => doReturn(selected)} onClose={() => setReviewRows(null)} />
         )}
