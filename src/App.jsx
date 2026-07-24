@@ -183,7 +183,7 @@ function StatCard({ label, value, tone }) {
   );
 }
 
-function downloadPriceList(stock) {
+function downloadPriceList(stock, filename) {
   const header = "Артикул;Субс/аналог;Наименование;Модель;Кол-во;Цена, ₸";
   const rows = stock.map((p) => [p.sku, p.alt_sku, p.name, p.model, p.qty, p.price].join(";"));
   const csv = "\uFEFF" + [header, ...rows].join("\n");
@@ -191,7 +191,7 @@ function downloadPriceList(stock) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "прайс-лист.csv";
+  a.download = filename || "прайс-лист.csv";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -238,12 +238,38 @@ function DashboardScreen({ session, shop }) {
   }
 
   const low = stock.filter((i) => i.qty <= i.min_qty);
+  const daysLeft = shop.next_payment_date ? Math.ceil((new Date(shop.next_payment_date) - new Date(todayISO())) / (1000 * 60 * 60 * 24)) : null;
 
   return (
     <div>
       {error && (
         <div style={{ display: "flex", gap: 8, background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>
           <Icon size={15}>⚠</Icon> {error}
+        </div>
+      )}
+
+      {daysLeft !== null && daysLeft <= 5 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            background: daysLeft < 0 ? c.redBg : "#FDF3E2",
+            color: daysLeft < 0 ? c.red : c.amberDark,
+            borderRadius: 8,
+            padding: "10px 12px",
+            fontFamily: bodyFont,
+            fontWeight: 700,
+            fontSize: 12.5,
+            marginBottom: 14,
+          }}
+        >
+          {daysLeft < 0
+            ? `Срок оплаты истёк ${Math.abs(daysLeft)} ${Math.abs(daysLeft) === 1 ? "день" : "дней"} назад`
+            : daysLeft === 0
+            ? "Подписка истекает сегодня"
+            : `До окончания ${shop.plan_id === "trial" ? "пробного периода" : "оплаченного периода"} осталось ${daysLeft} ${daysLeft === 1 ? "день" : daysLeft < 5 ? "дня" : "дней"}`}
+          {" — см. раздел Настройки."}
         </div>
       )}
 
@@ -3088,6 +3114,25 @@ function SettingsScreen({ session, shop, onShopUpdate }) {
           {shop.plan_id === "trial" ? "Пробный доступ до" : "Следующее списание"}:{" "}
           <span style={{ fontWeight: 600, color: c.ink }}>{shop.next_payment_date || "—"}</span>
         </div>
+        {shop.next_payment_date &&
+          (() => {
+            const daysLeft = Math.ceil((new Date(shop.next_payment_date) - new Date(todayISO())) / (1000 * 60 * 60 * 24));
+            if (daysLeft < 0) {
+              return (
+                <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8, background: c.redBg, color: c.red, fontFamily: bodyFont, fontWeight: 700, fontSize: 12.5 }}>
+                  Срок истёк {Math.abs(daysLeft)} {Math.abs(daysLeft) === 1 ? "день" : "дней"} назад — доступ может быть заблокирован
+                </div>
+              );
+            }
+            if (daysLeft <= 5) {
+              return (
+                <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8, background: "#FDF3E2", color: c.amberDark, fontFamily: bodyFont, fontWeight: 700, fontSize: 12.5 }}>
+                  Осталось {daysLeft} {daysLeft === 1 ? "день" : daysLeft < 5 ? "дня" : "дней"} — не забудьте продлить
+                </div>
+              );
+            }
+            return null;
+          })()}
       </div>
 
       <div style={{ fontFamily: bodyFont, fontSize: 13, color: c.steel, marginBottom: 12 }}>Выберите тариф — первые 14 дней бесплатно на любом плане.</div>
@@ -5228,6 +5273,20 @@ function AdminPanelScreen({ session, onExit }) {
   const [markPaidOpen, setMarkPaidOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
+  const [downloadingId, setDownloadingId] = useState(null);
+
+  async function downloadShopPriceList(shop) {
+    setDownloadingId(shop.id);
+    setError("");
+    try {
+      const rows = await db("stock", { query: `?shop_id=eq.${shop.id}&order=name.asc`, session });
+      downloadPriceList(rows, `прайс-лист — ${shop.name}.csv`);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDownloadingId(null);
+    }
+  }
 
   async function load() {
     setError("");
@@ -5300,6 +5359,24 @@ function AdminPanelScreen({ session, onExit }) {
             <div style={{ fontFamily: displayFont, fontSize: 17, fontWeight: 700, color: c.ink, marginBottom: 4 }}>{openShop.name}</div>
             <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 16 }}>{openShop.store_address || "Адрес не указан"}</div>
 
+            <div style={{ background: c.cloud, borderRadius: 8, padding: "12px 14px", marginBottom: 16 }}>
+              <div style={{ fontFamily: bodyFont, fontSize: 11, fontWeight: 700, color: c.steel, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.03em" }}>Контакты</div>
+              {openShop.contact_person && <div style={{ fontFamily: bodyFont, fontSize: 13, color: c.ink, marginBottom: 3 }}>{openShop.contact_person}</div>}
+              {(openShop.phones || []).filter((p) => p && p.trim()).length > 0 ? (
+                (openShop.phones || [])
+                  .filter((p) => p && p.trim())
+                  .map((p, i) => (
+                    <div key={i} style={{ fontFamily: monoFont, fontSize: 13, color: c.ink, marginBottom: 2 }}>
+                      📞 {p}
+                    </div>
+                  ))
+              ) : (
+                <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steelLight }}>Телефон не указан</div>
+              )}
+              {openShop.email && <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginTop: 3 }}>✉ {openShop.email}</div>}
+              {openShop.legal_address && <div style={{ fontFamily: bodyFont, fontSize: 11.5, color: c.steel, marginTop: 3 }}>Юр. адрес: {openShop.legal_address}</div>}
+            </div>
+
             <div style={{ display: "flex", gap: 20, marginBottom: 16 }}>
               <div>
                 <div style={{ fontFamily: bodyFont, fontSize: 11, color: c.steel }}>Тариф</div>
@@ -5331,9 +5408,12 @@ function AdminPanelScreen({ session, onExit }) {
               }}
             >
               {shopIsBlocked(openShop) ? "🔒 Доступ заблокирован" : "✓ Доступ активен"}
+              {shopIsBlocked(openShop) && (
+                <span style={{ fontWeight: 500, fontSize: 11.5, marginLeft: "auto" }}>Не виден в поиске по сети другим магазинам</span>
+              )}
             </div>
 
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
               <button onClick={() => setMarkPaidOpen(true)} style={{ ...primaryBtn, flex: 1 }}>
                 Отметить оплату
               </button>
@@ -5357,6 +5437,29 @@ function AdminPanelScreen({ session, onExit }) {
                 {openShop.access_blocked ? "Разблокировать вручную" : "Заблокировать вручную"}
               </button>
             </div>
+            <button
+              onClick={() => downloadShopPriceList(openShop)}
+              disabled={downloadingId === openShop.id}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+                background: "transparent",
+                border: `1px solid ${c.border}`,
+                borderRadius: 8,
+                padding: "10px 14px",
+                fontFamily: bodyFont,
+                fontWeight: 600,
+                fontSize: 12.5,
+                color: c.ink,
+                cursor: "pointer",
+                opacity: downloadingId === openShop.id ? 0.7 : 1,
+              }}
+            >
+              {downloadingId === openShop.id ? <Spinner /> : "⬇ Скачать прайс-лист"}
+            </button>
           </div>
 
           {markPaidOpen && <AdminMarkPaidModal shop={openShop} saving={saving} onClose={() => setMarkPaidOpen(false)} onConfirm={markPaid} />}
@@ -5367,6 +5470,7 @@ function AdminPanelScreen({ session, onExit }) {
           <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden", maxWidth: 900 }}>
             <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
               <span style={{ flex: 1 }}>Магазин</span>
+              <span style={{ width: 130 }}>Телефон</span>
               <span style={{ width: 100 }}>Тариф</span>
               <span style={{ width: 130 }}>Статус</span>
               <span style={{ width: 110 }}>След. оплата</span>
@@ -5381,6 +5485,7 @@ function AdminPanelScreen({ session, onExit }) {
             {filtered.map((s, i) => (
               <div key={s.id} onClick={() => setOpenId(s.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderTop: i === 0 ? "none" : `1px solid ${c.border}`, cursor: "pointer", fontFamily: bodyFont, fontSize: 13 }}>
                 <span style={{ flex: 1, color: c.ink, fontWeight: 600 }}>{s.name}</span>
+                <span style={{ width: 130, fontFamily: monoFont, fontSize: 12, color: c.steel }}>{(s.phones || []).find((p) => p && p.trim()) || "—"}</span>
                 <span style={{ width: 100, color: c.steel }}>{s.plan_id || "—"}</span>
                 <span style={{ width: 130, color: c.steel }}>{s.subscription_status || "—"}</span>
                 <span style={{ width: 110, fontFamily: monoFont, color: shopIsBlocked(s) ? c.red : c.steel }}>{s.next_payment_date || "—"}</span>
@@ -5426,7 +5531,18 @@ export default function App() {
         } else {
           const created = await db("shops", {
             method: "POST",
-            body: { owner_id: session.user.id, name: "Мой магазин" },
+            body: {
+              owner_id: session.user.id,
+              name: "Мой магазин",
+              plan_id: "trial",
+              subscription_status: "Пробный период",
+              subscription_price: 0,
+              next_payment_date: (() => {
+                const d = new Date();
+                d.setDate(d.getDate() + 14);
+                return d.toISOString().slice(0, 10);
+              })(),
+            },
             session,
             prefer: "return=representation",
           });
