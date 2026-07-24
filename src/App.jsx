@@ -350,7 +350,7 @@ function AuthScreen({ onSignedIn }) {
       }
       setBusy(true);
       try {
-        await authRequest("recover", { email });
+        await authRequest(`recover?redirect_to=${encodeURIComponent(window.location.origin)}`, { email });
         setNotice("Если такой email зарегистрирован — на него отправлена ссылка для сброса пароля. Проверьте почту (и папку «Спам»).");
       } catch (e) {
         setError(e.message);
@@ -2991,6 +2991,14 @@ function ContactsScreen({ session, shop }) {
   );
 }
 
+// ⚠️ Впиши сюда свои реальные контакты — это единственное место,
+// где их нужно поменять, дальше они подставятся везде сами.
+const PLATFORM_CONTACT = {
+  phone: "+7-707-757 7667",
+  whatsapp: "77077577667", // только цифры, для wa.me ссылки
+  email: "sarmanov.ru1989@gmail.com",
+};
+
 const TARIFF_PLANS = [
   { id: "trial", name: "Пробный", price: 0, limit: "до 50 позиций", note: "14 дней бесплатно, затем выбор тарифа" },
   { id: "start", name: "Старт", price: 6900, limit: "до 150 позиций" },
@@ -5352,6 +5360,7 @@ function StockScreen({ session, shop }) {
 function shopIsBlocked(shop) {
   if (!shop) return false;
   if (shop.access_blocked) return true;
+  if (shop.subscription_status === "Ожидает оплаты") return true;
   if (shop.next_payment_date && shop.next_payment_date < todayISO()) return true;
   return false;
 }
@@ -5752,14 +5761,36 @@ export default function App() {
   }
 
   if (shopIsBlocked(shop) && !isAdmin) {
+    const pending = shop.subscription_status === "Ожидает оплаты";
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: c.cloud, fontFamily: bodyFont, padding: 20 }}>
         <div style={{ maxWidth: 440, background: c.panel, border: `1px solid ${c.border}`, borderRadius: 12, padding: 28, textAlign: "center" }}>
           <div style={{ fontSize: 32, marginBottom: 10 }}>🔒</div>
           <div style={{ fontFamily: displayFont, fontSize: 18, fontWeight: 700, color: c.ink, marginBottom: 8 }}>Подписка приостановлена</div>
-          <div style={{ fontFamily: bodyFont, fontSize: 13.5, color: c.steel, marginBottom: 16, lineHeight: 1.5 }}>
-            Доступ к «{shop.name}» временно ограничен — истёк срок оплаты{shop.next_payment_date ? ` (${shop.next_payment_date})` : ""}. Свяжитесь с администратором СкладСеть, чтобы продлить подписку.
+          <div style={{ fontFamily: bodyFont, fontSize: 13.5, color: c.steel, marginBottom: 18, lineHeight: 1.5 }}>
+            {pending
+              ? `Тариф выбран, но оплата ещё не подтверждена. Оплатите абонентскую плату и свяжитесь с администратором СкладСеть — доступ продлевается вручную после проверки.`
+              : `Доступ к «${shop.name}» временно ограничен — истёк срок оплаты${shop.next_payment_date ? ` (${shop.next_payment_date})` : ""}. Свяжитесь с администратором СкладСеть, чтобы продлить подписку.`}
           </div>
+
+          <div style={{ background: c.cloud, borderRadius: 10, padding: 16, marginBottom: 18, textAlign: "left" }}>
+            <div style={{ fontFamily: bodyFont, fontSize: 11, fontWeight: 700, color: c.steel, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.03em" }}>Связаться для оплаты</div>
+            <a href={`tel:${PLATFORM_CONTACT.phone.replace(/\s/g, "")}`} style={{ display: "flex", alignItems: "center", gap: 8, color: c.ink, textDecoration: "none", fontFamily: monoFont, fontSize: 13.5, marginBottom: 8 }}>
+              📞 {PLATFORM_CONTACT.phone}
+            </a>
+            <a
+              href={`https://wa.me/${PLATFORM_CONTACT.whatsapp}`}
+              target="_blank"
+              rel="noreferrer"
+              style={{ display: "flex", alignItems: "center", gap: 8, color: c.green, textDecoration: "none", fontFamily: bodyFont, fontWeight: 600, fontSize: 13, marginBottom: 8 }}
+            >
+              💬 Написать в WhatsApp
+            </a>
+            <a href={`mailto:${PLATFORM_CONTACT.email}`} style={{ display: "flex", alignItems: "center", gap: 8, color: c.steel, textDecoration: "none", fontFamily: bodyFont, fontSize: 12.5 }}>
+              ✉ {PLATFORM_CONTACT.email}
+            </a>
+          </div>
+
           <button
             onClick={() => {
               setSession(null);
