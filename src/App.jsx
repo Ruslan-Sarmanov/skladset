@@ -68,6 +68,45 @@ async function authRequest(path, body) {
   if (!res.ok) throw new Error(data.error_description || data.msg || data.error || "Ошибка авторизации");
   return data;
 }
+
+// ---- Keep the person signed in across page refreshes ----
+// Supabase access tokens expire (usually after 1 hour), so we store the
+// refresh_token too and use it to silently mint a new access_token
+// instead of forcing a re-login every time the page reloads.
+const SESSION_STORAGE_KEY = "skladcrm_session";
+function saveSessionToStorage(session) {
+  try {
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  } catch (e) {
+    // ignore storage errors (e.g. private browsing)
+  }
+}
+function loadSessionFromStorage() {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+function clearSessionFromStorage() {
+  try {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+  } catch (e) {
+    // ignore
+  }
+}
+async function refreshSession(refresh_token) {
+  const data = await authRequest("token?grant_type=refresh_token", { refresh_token });
+  const session = {
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+    user: data.user,
+    expires_at: Date.now() + (data.expires_in || 3600) * 1000,
+  };
+  saveSessionToStorage(session);
+  return session;
+}
 async function db(table, { method = "GET", query = "", body, session, prefer } = {}) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${query}`, {
     method,
@@ -383,14 +422,14 @@ function AuthScreen({ onSignedIn }) {
       if (mode === "signup") {
         const data = await authRequest("signup", { email, password });
         if (data.access_token) {
-          onSignedIn({ access_token: data.access_token, user: data.user });
+          onSignedIn({ access_token: data.access_token, refresh_token: data.refresh_token, user: data.user, expires_at: Date.now() + (data.expires_in || 3600) * 1000 });
         } else {
           setNotice("Регистрация прошла. Если в проекте включено подтверждение почты — перейдите по ссылке из письма, затем войдите.");
           setMode("login");
         }
       } else {
         const data = await authRequest("token?grant_type=password", { email, password });
-        onSignedIn({ access_token: data.access_token, user: data.user });
+        onSignedIn({ access_token: data.access_token, refresh_token: data.refresh_token, user: data.user, expires_at: Date.now() + (data.expires_in || 3600) * 1000 });
       }
     } catch (e) {
       setError(e.message);
@@ -504,7 +543,7 @@ function AuthScreen({ onSignedIn }) {
 }
 
 // ---- Shown when the person clicks the reset-password link from their email ----
-function ResetPasswordScreen({ accessToken, onDone }) {
+function ResetPasswordScreen({ recoverySession, onDone }) {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
@@ -524,13 +563,18 @@ function ResetPasswordScreen({ accessToken, onDone }) {
     try {
       const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
         method: "PUT",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${recoverySession.access_token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error_description || data.msg || data.error || "Не удалось обновить пароль");
       window.history.replaceState(null, "", window.location.pathname);
-      onDone({ access_token: accessToken, user: data });
+      onDone({
+        access_token: recoverySession.access_token,
+        refresh_token: recoverySession.refresh_token,
+        user: data,
+        expires_at: Date.now() + (recoverySession.expires_in || 3600) * 1000,
+      });
     } catch (e) {
       setError(e.message);
     } finally {
@@ -6326,7 +6370,8 @@ function SupportScreen({ session, shop }) {
 }
 
 export default function App() {
-  const [session, setSession] = useState(null);
+  const [session, setSession] = useState(() => loadSessionFromStorage());
+  const [sessionChecked, setSessionChecked] = useState(false);
   const [shop, setShop] = useState(null);
   const [bootError, setBootError] = useState("");
   const [tab, setTab] = useState("dash");
@@ -6339,11 +6384,17 @@ export default function App() {
       return false;
     }
   });
-  const [recoveryToken, setRecoveryToken] = useState(() => {
+  const [recoverySession, setRecoverySession] = useState(() => {
     if (typeof window === "undefined" || !window.location.hash) return null;
     const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     if (params.get("type") !== "recovery") return null;
-    return params.get("access_token") || null;
+    const access_token = params.get("access_token");
+    if (!access_token) return null;
+    return {
+      access_token,
+      refresh_token: params.get("refresh_token") || null,
+      expires_in: Number(params.get("expires_in")) || 3600,
+    };
   });
 
   function toggleSidebar() {
@@ -6357,6 +6408,67 @@ export default function App() {
       return next;
     });
   }
+
+  function signOut() {
+    clearSessionFromStorage();
+    setSession(null);
+    setShop(null);
+  }
+
+  // On load: if we restored a session from storage, make sure it's still
+  // valid (or silently refresh it) before doing anything else — this is
+  // what keeps the person logged in across a page refresh instead of
+  // bouncing them back to the login screen every time.
+  useEffect(() => {
+    (async () => {
+      if (!session) {
+        setSessionChecked(true);
+        return;
+      }
+      const stillValid = session.expires_at && session.expires_at - Date.now() > 60000;
+      if (stillValid) {
+        setSessionChecked(true);
+        return;
+      }
+      if (!session.refresh_token) {
+        signOut();
+        setSessionChecked(true);
+        return;
+      }
+      try {
+        const refreshed = await refreshSession(session.refresh_token);
+        setSession(refreshed);
+      } catch (e) {
+        signOut();
+      } finally {
+        setSessionChecked(true);
+      }
+    })();
+    // eslint-disable-next-line
+  }, []);
+
+  // Keep localStorage in sync whenever the session changes, and proactively
+  // refresh the access token a few minutes before it actually expires so a
+  // long work session never gets interrupted mid-use.
+  useEffect(() => {
+    if (!session) {
+      clearSessionFromStorage();
+      return;
+    }
+    saveSessionToStorage(session);
+    if (!session.refresh_token || !session.expires_at) return;
+    const msUntilRefresh = Math.max(30000, session.expires_at - Date.now() - 5 * 60 * 1000);
+    const timer = setTimeout(async () => {
+      try {
+        const refreshed = await refreshSession(session.refresh_token);
+        setSession(refreshed);
+      } catch (e) {
+        signOut();
+      }
+    }, msUntilRefresh);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line
+  }, [session]);
 
   useEffect(() => {
     if (!session) return;
@@ -6399,15 +6511,24 @@ export default function App() {
     })();
   }, [session]);
 
-  if (recoveryToken) {
+  if (recoverySession) {
     return (
       <ResetPasswordScreen
-        accessToken={recoveryToken}
+        recoverySession={recoverySession}
         onDone={(newSession) => {
-          setRecoveryToken(null);
+          setRecoverySession(null);
           setSession(newSession);
         }}
       />
+    );
+  }
+
+  if (!sessionChecked) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: c.cloud, fontFamily: bodyFont, color: c.steel }}>
+        <Spinner />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
     );
   }
 
@@ -6471,10 +6592,7 @@ export default function App() {
           </div>
 
           <button
-            onClick={() => {
-              setSession(null);
-              setShop(null);
-            }}
+            onClick={signOut}
             style={{ background: "transparent", border: `1px solid ${c.border}`, borderRadius: 8, padding: "9px 16px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, color: c.ink, cursor: "pointer" }}
           >
             Выйти
@@ -6628,10 +6746,7 @@ export default function App() {
           </div>
         )}
         <button
-          onClick={() => {
-            setSession(null);
-            setShop(null);
-          }}
+          onClick={signOut}
           title={sidebarCollapsed ? "Выйти" : undefined}
           style={{
             marginTop: sidebarCollapsed ? "auto" : 0,
