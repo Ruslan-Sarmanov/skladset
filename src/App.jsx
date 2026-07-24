@@ -325,7 +325,7 @@ function DashboardScreen({ session, shop }) {
       </div>
 
       <div style={{ fontFamily: displayFont, fontSize: 16, fontWeight: 600, color: c.ink, marginBottom: 10 }}>Требует внимания</div>
-      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowY: "auto", maxHeight: "50vh" }}>
         {low.length === 0 && (
           <div style={{ padding: 18, fontFamily: bodyFont, fontSize: 13.5, color: c.steel }}>Все остатки выше минимального уровня.</div>
         )}
@@ -1314,8 +1314,8 @@ function OrdersScreen({ session, shop }) {
         </div>
       )}
       {filteredOrders.length > 0 && (
-        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
-          <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowY: "auto", maxHeight: "62vh" }}>
+          <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600, position: "sticky", top: 0, zIndex: 1 }}>
             <span style={{ width: 100 }}>№</span>
             <span style={{ width: 90 }}>Дата</span>
             <span style={{ flex: 1 }}>Контрагент</span>
@@ -1437,8 +1437,8 @@ function SalesByPeriodReport({ salesLog }) {
           </button>
         ))}
       </div>
-      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
-        <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowY: "auto", maxHeight: "52vh" }}>
+        <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600, position: "sticky", top: 0, zIndex: 1 }}>
           <span style={{ width: 110 }}>Период</span>
           <span style={{ width: 60, textAlign: "right" }}>Кол.</span>
           <span style={{ flex: 1, textAlign: "right" }}>Продажи</span>
@@ -1529,8 +1529,8 @@ function TopArticlesReport({ salesLog }) {
           style={{ marginLeft: "auto", padding: "6px 10px", borderRadius: 6, border: `1px solid ${c.border}`, fontFamily: bodyFont, fontSize: 12.5 }}
         />
       </div>
-      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
-        <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowY: "auto", maxHeight: "52vh" }}>
+        <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600, position: "sticky", top: 0, zIndex: 1 }}>
           <span style={{ width: 24 }}>#</span>
           <span style={{ width: 120 }}>Артикул</span>
           <span style={{ flex: 1 }}>Наименование</span>
@@ -1801,8 +1801,8 @@ function CashLedgerReport({ session, shop, salesLog }) {
 
       <DateRangeRow dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} />
 
-      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
-        <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowY: "auto", maxHeight: "52vh" }}>
+        <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600, position: "sticky", top: 0, zIndex: 1 }}>
           <span style={{ width: 80 }}>Дата</span>
           <span style={{ width: 90 }}>Тип</span>
           <span style={{ width: 140 }}>Статья</span>
@@ -1891,8 +1891,8 @@ function ReportsScreen({ session, shop }) {
       />
 
       {skuResults ? (
-        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
-          <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowY: "auto", maxHeight: "62vh" }}>
+          <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600, position: "sticky", top: 0, zIndex: 1 }}>
             <span style={{ width: 80 }}>Дата</span>
             <span style={{ width: 150 }}>Тип</span>
             <span style={{ flex: 1 }}>Контрагент</span>
@@ -2264,8 +2264,8 @@ function DocumentsScreen({ session, shop }) {
 
       <DateRangeRow dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} />
 
-      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
-        <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowY: "auto", maxHeight: "62vh" }}>
+        <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600, position: "sticky", top: 0, zIndex: 1 }}>
           <span style={{ width: 100 }}>№</span>
           <span style={{ width: 170 }}>Тип</span>
           <span style={{ flex: 1 }}>Получатель</span>
@@ -2825,7 +2825,7 @@ function ContactsScreen({ session, shop }) {
           </div>
         </div>
         ) : (
-          <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
+          <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowY: "auto", maxHeight: "62vh" }}>
             {history === null && (
               <div style={{ display: "flex", gap: 8, padding: 18, color: c.steel, fontSize: 13 }}>
                 <Spinner /> Загружаю историю…
@@ -2967,8 +2967,8 @@ function ContactsScreen({ session, shop }) {
         </select>
       </div>
 
-      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
-        <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowY: "auto", maxHeight: "62vh" }}>
+        <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600, position: "sticky", top: 0, zIndex: 1 }}>
           <span onClick={() => toggleSort("name")} style={{ flex: 1, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center" }}>
             Наименование {sortArrow("name")}
           </span>
@@ -4223,8 +4223,8 @@ function SalesLogPanel({ salesLog, shop, session, stockItems, onCommitted }) {
         <span style={{ marginLeft: "auto", fontFamily: bodyFont, fontSize: 12, color: c.steel }}>{filtered.length} записей</span>
       </div>
 
-      <div style={{ border: `1px solid ${c.border}`, borderRadius: 8, overflow: "hidden" }}>
-        <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+      <div style={{ border: `1px solid ${c.border}`, borderRadius: 8, overflowY: "auto", maxHeight: "52vh" }}>
+        <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.cloud, color: c.steel, fontFamily: bodyFont, fontSize: 11, fontWeight: 600, position: "sticky", top: 0, zIndex: 1 }}>
           <span style={{ width: 80 }}>Дата</span>
           <span style={{ width: 150 }}>Тип</span>
           <span style={{ flex: 1 }}>Контрагент</span>
@@ -5669,7 +5669,7 @@ function AdBannersAdmin({ session }) {
       {banners !== null && banners.length === 0 && (
         <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 20, color: c.steel, fontSize: 13.5, maxWidth: 600 }}>Баннеров пока нет.</div>
       )}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 700 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 700, maxHeight: "62vh", overflowY: "auto" }}>
         {(banners || []).map((b) => (
           <div key={b.id} style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 14, display: "flex", alignItems: "center", gap: 12 }}>
             {b.image_url ? (
@@ -5795,7 +5795,7 @@ function SupportAdmin({ session }) {
       {messages !== null && filtered.length === 0 && (
         <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 20, color: c.steel, fontSize: 13.5, maxWidth: 700 }}>Обращений нет.</div>
       )}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 700 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 700, maxHeight: "62vh", overflowY: "auto" }}>
         {filtered.map((m) => (
           <div key={m.id} style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 16 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
@@ -6168,8 +6168,8 @@ function AdminPanelScreen({ session, onExit }) {
             )}
             <span style={{ marginLeft: "auto", fontFamily: bodyFont, fontSize: 12, color: c.steel }}>{filtered.length} из {(shops || []).length}</span>
           </div>
-          <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden", maxWidth: 900 }}>
-            <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600 }}>
+          <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowY: "auto", maxHeight: "62vh", maxWidth: 900 }}>
+            <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600, position: "sticky", top: 0, zIndex: 1 }}>
               <span style={{ flex: 1 }}>Магазин</span>
               <span style={{ width: 130 }}>Телефон</span>
               <span style={{ width: 100 }}>Тариф</span>
