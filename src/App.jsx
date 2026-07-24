@@ -75,6 +75,13 @@ async function db(table, { method = "GET", query = "", body, session, prefer } =
 function genDocNumber(prefix) {
   return `${prefix}-${Date.now().toString().slice(-6)}`;
 }
+// Strips dashes/spaces and uppercases — "48725-03010" and "4872503010"
+// normalize to the same string. Used only to WARN about likely
+// duplicates, never to silently merge — a one-character suffix
+// (e.g. "AN-734K" vs "AN-734KT") is often a genuinely different part.
+function normalizeSku(sku) {
+  return String(sku || "").toUpperCase().replace(/[\s\-_.]/g, "");
+}
 function nextIncomingNumber() {
   return String(Date.now()).slice(-5);
 }
@@ -3179,8 +3186,9 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
     setError("");
     setRows(null);
     try {
+      const norm = normalizeSku(query);
       const filter = query.trim()
-        ? `&or=(sku.ilike.*${encodeURIComponent(query)}*,name.ilike.*${encodeURIComponent(query)}*,alt_sku.ilike.*${encodeURIComponent(query)}*,brand.ilike.*${encodeURIComponent(query)}*)`
+        ? `&or=(sku.ilike.*${encodeURIComponent(query)}*,name.ilike.*${encodeURIComponent(query)}*,alt_sku.ilike.*${encodeURIComponent(query)}*,brand.ilike.*${encodeURIComponent(query)}*,sku_normalized.ilike.*${encodeURIComponent(norm)}*)`
         : "";
       const data = await db("network_stock", { query: `?select=*${filter}&order=shop_name.asc&limit=200`, session });
       setRows(data);
@@ -3230,21 +3238,22 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
   function groupedDefault(list) {
     const groups = {};
     list.forEach((r) => {
-      if (!groups[r.sku]) groups[r.sku] = [];
-      groups[r.sku].push(r);
+      const key = r.sku_normalized || normalizeSku(r.sku);
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(r);
     });
-    const q = query.trim().toLowerCase();
-    const skus = Object.keys(groups);
-    const primarySku = skus.find((s) => s.toLowerCase() === q);
-    const orderedSkus = [
-      ...(primarySku ? [primarySku] : []),
-      ...skus.filter((s) => s !== primarySku).sort((a, b) => a.localeCompare(b, "ru")),
+    const qNorm = normalizeSku(query);
+    const keys = Object.keys(groups);
+    const primaryKey = keys.find((k) => k === qNorm);
+    const orderedKeys = [
+      ...(primaryKey ? [primaryKey] : []),
+      ...keys.filter((k) => k !== primaryKey).sort((a, b) => a.localeCompare(b, "ru")),
     ];
     const out = [];
-    orderedSkus.forEach((sku, groupIdx) => {
-      const sorted = [...groups[sku]].sort((a, b) => a.price - b.price);
+    orderedKeys.forEach((key, groupIdx) => {
+      const sorted = [...groups[key]].sort((a, b) => a.price - b.price);
       sorted.forEach((r, idx) => {
-        out.push({ ...r, isAnalog: Boolean(primarySku) && sku !== primarySku, isGroupFirst: idx === 0, isFirstAnalogGroup: Boolean(primarySku) && sku !== primarySku && groupIdx === (primarySku ? 1 : 0) });
+        out.push({ ...r, isAnalog: Boolean(primaryKey) && key !== primaryKey, isGroupFirst: idx === 0, isFirstAnalogGroup: Boolean(primaryKey) && key !== primaryKey && groupIdx === (primaryKey ? 1 : 0) });
       });
     });
     return out;
@@ -4159,6 +4168,7 @@ function StockScreen({ session, shop }) {
   const [markupPct, setMarkupPct] = useState("");
   const [printPreviewOpen, setPrintPreviewOpen] = useState(false);
   const [networkBrands, setNetworkBrands] = useState([]);
+  const [dupWarning, setDupWarning] = useState(null); // { existing, pendingForm }
 
   // ---- operation panel (Новая операция / Журнал продаж / Загрузка из Excel) ----
   const [opTab, setOpTab] = useState("new");
@@ -4217,7 +4227,14 @@ function StockScreen({ session, shop }) {
     // eslint-disable-next-line
   }, [shop.id]);
 
-  async function saveItem(form) {
+  async function saveItem(form, force) {
+    const normalized = normalizeSku(form.sku);
+    const existing = (items || []).find((it) => it.id !== form.id && normalizeSku(it.sku) === normalized);
+    if (existing && !force) {
+      setDupWarning({ existing, pendingForm: form });
+      return;
+    }
+    setDupWarning(null);
     try {
       if (form.id) {
         await db("stock", {
@@ -4318,12 +4335,14 @@ function StockScreen({ session, shop }) {
     .filter((it) => {
       if (!query.trim()) return true;
       const q = query.toLowerCase();
+      const qNorm = normalizeSku(query);
       return (
         it.sku.toLowerCase().includes(q) ||
         (it.alt_sku || "").toLowerCase().includes(q) ||
         it.name.toLowerCase().includes(q) ||
         (it.brand || "").toLowerCase().includes(q) ||
-        (it.model || "").toLowerCase().includes(q)
+        (it.model || "").toLowerCase().includes(q) ||
+        (qNorm.length >= 3 && normalizeSku(it.sku).includes(qNorm))
       );
     })
     .sort((a, b) => {
@@ -4938,6 +4957,48 @@ function StockScreen({ session, shop }) {
           onConfirm={(selected) => commitReturnFromSale(returnReview.sale, selected)}
           onClose={() => setReturnReview(null)}
         />
+      )}
+
+      {dupWarning && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(28,33,40,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 20 }} onClick={() => setDupWarning(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: c.panel, borderRadius: 12, width: 420 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${c.border}` }}>
+              <span style={{ fontFamily: displayFont, fontSize: 15, fontWeight: 600, color: c.ink }}>Похожий артикул уже есть</span>
+              <button onClick={() => setDupWarning(null)} style={{ background: "none", border: "none", cursor: "pointer", color: c.steel }}>
+                <Icon size={17}>✕</Icon>
+              </button>
+            </div>
+            <div style={{ padding: 18 }}>
+              <div style={{ fontFamily: bodyFont, fontSize: 13, color: c.ink, marginBottom: 12 }}>
+                На складе уже есть товар с похожим артикулом (отличается только дефисами/пробелами) — возможно, это тот же товар, записанный по-другому:
+              </div>
+              <div style={{ background: c.cloud, borderRadius: 8, padding: "10px 12px", marginBottom: 14 }}>
+                <div style={{ fontFamily: monoFont, fontWeight: 700, fontSize: 13.5, color: c.ink }}>{dupWarning.existing.sku}</div>
+                <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginTop: 2 }}>{dupWarning.existing.name} · {dupWarning.existing.qty} шт на складе</div>
+              </div>
+              <div style={{ fontFamily: bodyFont, fontSize: 12, color: c.steel, marginBottom: 16 }}>
+                Если это правда та же деталь — лучше открыть и пополнить существующую карточку. Если это другая модификация (другая буква/цифра в конце — например «K» и «KT» часто означают разные комплекты) — можно смело создать отдельный товар.
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={() => {
+                    setFormMode(dupWarning.existing);
+                    setDupWarning(null);
+                  }}
+                  style={{ ...primaryBtn, flex: 1 }}
+                >
+                  Открыть существующий
+                </button>
+                <button
+                  onClick={() => saveItem(dupWarning.pendingForm, true)}
+                  style={{ flex: 1, background: "transparent", border: `1px solid ${c.border}`, borderRadius: 8, padding: "10px 14px", fontFamily: bodyFont, fontWeight: 600, fontSize: 12.5, color: c.ink, cursor: "pointer" }}
+                >
+                  Это другая деталь
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {printPreviewOpen && (
