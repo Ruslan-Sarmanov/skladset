@@ -333,7 +333,7 @@ function DashboardScreen({ session, shop }) {
 
 // ---- Auth screen ----
 function AuthScreen({ onSignedIn }) {
-  const [mode, setMode] = useState("login"); // "login" | "signup"
+  const [mode, setMode] = useState("login"); // "login" | "signup" | "recover"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -343,6 +343,22 @@ function AuthScreen({ onSignedIn }) {
   async function submit() {
     setError("");
     setNotice("");
+    if (mode === "recover") {
+      if (!email.trim()) {
+        setError("Укажите email.");
+        return;
+      }
+      setBusy(true);
+      try {
+        await authRequest("recover", { email });
+        setNotice("Если такой email зарегистрирован — на него отправлена ссылка для сброса пароля. Проверьте почту (и папку «Спам»).");
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     if (!email.trim() || password.length < 6) {
       setError("Укажите email и пароль (минимум 6 символов).");
       return;
@@ -373,52 +389,71 @@ function AuthScreen({ onSignedIn }) {
       <div style={{ width: 380, background: c.panel, border: `1px solid ${c.border}`, borderRadius: 12, padding: 28 }}>
         <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 20, color: c.ink, marginBottom: 4 }}>СкладСеть</div>
         <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 20 }}>
-          {mode === "login" ? "Вход в ваш магазин" : "Регистрация нового магазина"}
+          {mode === "login" ? "Вход в ваш магазин" : mode === "signup" ? "Регистрация нового магазина" : "Восстановление пароля"}
         </div>
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-          {[
-            { key: "login", label: "Вход" },
-            { key: "signup", label: "Регистрация" },
-          ].map((t) => (
+        {mode !== "recover" && (
+          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            {[
+              { key: "login", label: "Вход" },
+              { key: "signup", label: "Регистрация" },
+            ].map((t) => (
+              <button
+                key={t.key}
+                onClick={() => {
+                  setMode(t.key);
+                  setError("");
+                  setNotice("");
+                }}
+                style={{
+                  flex: 1,
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  border: `1px solid ${mode === t.key ? c.amberDark : c.border}`,
+                  background: mode === t.key ? "#FDF3E2" : "#fff",
+                  color: c.ink,
+                  fontFamily: bodyFont,
+                  fontWeight: 600,
+                  fontSize: 12.5,
+                  cursor: "pointer",
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div style={{ marginBottom: mode === "recover" ? 16 : 10 }}>
+          <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} style={inputStyle} />
+        </div>
+        {mode !== "recover" && (
+          <div style={{ marginBottom: 8 }}>
+            <input
+              type="password"
+              placeholder="Пароль (минимум 6 символов)"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
+              style={inputStyle}
+            />
+          </div>
+        )}
+        {mode === "login" && (
+          <div style={{ marginBottom: 16, textAlign: "right" }}>
             <button
-              key={t.key}
               onClick={() => {
-                setMode(t.key);
+                setMode("recover");
                 setError("");
                 setNotice("");
               }}
-              style={{
-                flex: 1,
-                padding: "8px 10px",
-                borderRadius: 8,
-                border: `1px solid ${mode === t.key ? c.amberDark : c.border}`,
-                background: mode === t.key ? "#FDF3E2" : "#fff",
-                color: c.ink,
-                fontFamily: bodyFont,
-                fontWeight: 600,
-                fontSize: 12.5,
-                cursor: "pointer",
-              }}
+              style={{ background: "none", border: "none", color: c.steel, fontFamily: bodyFont, fontSize: 12, cursor: "pointer", padding: 0, textDecoration: "underline" }}
             >
-              {t.label}
+              Забыли пароль?
             </button>
-          ))}
-        </div>
-
-        <div style={{ marginBottom: 10 }}>
-          <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} style={inputStyle} />
-        </div>
-        <div style={{ marginBottom: 16 }}>
-          <input
-            type="password"
-            placeholder="Пароль (минимум 6 символов)"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
-            style={inputStyle}
-          />
-        </div>
+          </div>
+        )}
+        {mode === "recover" && <div style={{ marginBottom: 16 }} />}
 
         {error && (
           <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 12 }}>
@@ -432,10 +467,98 @@ function AuthScreen({ onSignedIn }) {
 
         <button onClick={submit} disabled={busy} style={{ ...primaryBtn, width: "100%", opacity: busy ? 0.7 : 1 }}>
           {busy ? <Spinner /> : mode === "login" ? <Icon size={15}>→</Icon> : <Icon size={15}>+</Icon>}
-          {mode === "login" ? "Войти" : "Зарегистрироваться"}
+          {mode === "login" ? "Войти" : mode === "signup" ? "Зарегистрироваться" : "Отправить ссылку для сброса"}
         </button>
+        {mode === "recover" && (
+          <button
+            onClick={() => {
+              setMode("login");
+              setError("");
+              setNotice("");
+            }}
+            style={{ width: "100%", marginTop: 10, background: "none", border: "none", color: c.steel, fontFamily: bodyFont, fontSize: 12.5, cursor: "pointer", padding: 0 }}
+          >
+            ← Назад ко входу
+          </button>
+        )}
 
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    </div>
+  );
+}
+
+// ---- Shown when the person clicks the reset-password link from their email ----
+function ResetPasswordScreen({ accessToken, onDone }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit() {
+    setError("");
+    if (password.length < 6) {
+      setError("Пароль должен быть минимум 6 символов.");
+      return;
+    }
+    if (password !== confirm) {
+      setError("Пароли не совпадают.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        method: "PUT",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error_description || data.msg || data.error || "Не удалось обновить пароль");
+      window.history.replaceState(null, "", window.location.pathname);
+      onDone({ access_token: accessToken, user: data });
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: c.cloud, fontFamily: bodyFont }}>
+      <div style={{ width: 380, background: c.panel, border: `1px solid ${c.border}`, borderRadius: 12, padding: 28 }}>
+        <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 20, color: c.ink, marginBottom: 4 }}>Новый пароль</div>
+        <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 20 }}>Придумайте новый пароль для входа в свой магазин.</div>
+
+        <div style={{ marginBottom: 10 }}>
+          <input
+            type="password"
+            placeholder="Новый пароль (минимум 6 символов)"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            style={inputStyle}
+          />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <input
+            type="password"
+            placeholder="Повторите пароль"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            style={inputStyle}
+          />
+        </div>
+
+        {error && (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 12 }}>
+            <Icon size={15}>⚠</Icon>
+            {error}
+          </div>
+        )}
+
+        <button onClick={submit} disabled={busy} style={{ ...primaryBtn, width: "100%", opacity: busy ? 0.7 : 1 }}>
+          {busy ? <Spinner /> : "Сохранить пароль и войти"}
+        </button>
       </div>
     </div>
   );
@@ -5519,6 +5642,12 @@ export default function App() {
   const [tab, setTab] = useState("dash");
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminMode, setAdminMode] = useState(false);
+  const [recoveryToken, setRecoveryToken] = useState(() => {
+    if (typeof window === "undefined" || !window.location.hash) return null;
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    if (params.get("type") !== "recovery") return null;
+    return params.get("access_token") || null;
+  });
 
   useEffect(() => {
     if (!session) return;
@@ -5560,6 +5689,18 @@ export default function App() {
       }
     })();
   }, [session]);
+
+  if (recoveryToken) {
+    return (
+      <ResetPasswordScreen
+        accessToken={recoveryToken}
+        onDone={(newSession) => {
+          setRecoveryToken(null);
+          setSession(newSession);
+        }}
+      />
+    );
+  }
 
   if (!session) return <AuthScreen onSignedIn={setSession} />;
 
