@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
-import { LayoutGrid, Boxes, Search, ShoppingCart, BarChart3, FileText, Users, Settings, LogOut } from "lucide-react";
+import { LayoutGrid, Boxes, Search, ShoppingCart, BarChart3, FileText, Users, Settings, LogOut, MessageCircle } from "lucide-react";
 
 // Tiny inline icon replacements — avoids needing to install any package.
 const Spinner = () => (
@@ -3601,7 +3601,7 @@ function NetworkSearchScreen({ session, shop, onShopUpdate }) {
       )}
 
       {rows && rows.length > 0 && (
-        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowX: "auto", overflowY: "hidden" }}>
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowX: "auto" }}>
           <div style={{ display: "flex", gap: 8, padding: "9px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600, minWidth: 640 }}>
             <span style={{ width: 68, flexShrink: 0, textAlign: "left", overflow: "hidden", whiteSpace: "nowrap" }}>Бренд</span>
             <span style={{ width: 100, flexShrink: 0, textAlign: "left", overflow: "hidden", whiteSpace: "nowrap" }}>Артикул</span>
@@ -4927,7 +4927,7 @@ function StockScreen({ session, shop }) {
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск по артикулу, субс/аналогу, названию, бренду или модели…" style={{ ...inputStyle, flex: 1 }} />
       </div>
 
-      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowX: "auto", overflowY: "hidden" }}>
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflowX: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 14px", background: c.ink, color: "#B8C0CC", fontFamily: bodyFont, fontSize: 11, fontWeight: 600, letterSpacing: 0.2, minWidth: 680 }}>
           <span onClick={() => toggleSort("brand")} style={{ width: 68, flexShrink: 0, textAlign: "left", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" }}>
             Бренд {sortArrow("brand")}
@@ -5716,6 +5716,122 @@ function AdBannersAdmin({ session }) {
   );
 }
 
+// ---- Admin: view and manage incoming support messages from shops ----
+function SupportAdmin({ session }) {
+  const [messages, setMessages] = useState(null);
+  const [error, setError] = useState("");
+  const [filter, setFilter] = useState("all"); // "all" | "new" | "read" | "resolved"
+
+  async function load() {
+    setError("");
+    try {
+      const rows = await db("support_messages", { query: `?order=created_at.desc`, session });
+      setMessages(rows);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line
+  }, []);
+
+  async function setStatus(msg, status) {
+    try {
+      await db("support_messages", { method: "PATCH", query: `?id=eq.${msg.id}`, body: { status }, session, prefer: "return=minimal" });
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  const statusLabel = { new: "Новое", read: "Прочитано", resolved: "Решено" };
+  const statusColor = { new: c.amberDark, read: c.steel, resolved: c.green };
+  const statusBg = { new: "#FDF3E2", read: c.cloud, resolved: c.greenBg };
+
+  const filtered = (messages || []).filter((m) => filter === "all" || m.status === filter);
+  const newCount = (messages || []).filter((m) => m.status === "new").length;
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+        <div style={{ fontFamily: bodyFont, fontSize: 13, color: c.steel }}>
+          Обращения от владельцев магазинов{newCount > 0 && <span style={{ color: c.red, fontWeight: 700 }}> · {newCount} новых</span>}
+        </div>
+      </div>
+
+      {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14, maxWidth: 700 }}>{error}</div>}
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        {[
+          { key: "all", label: "Все" },
+          { key: "new", label: "Новые" },
+          { key: "read", label: "Прочитанные" },
+          { key: "resolved", label: "Решённые" },
+        ].map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setFilter(t.key)}
+            style={{
+              padding: "6px 12px",
+              borderRadius: 6,
+              border: `1px solid ${filter === t.key ? c.amberDark : c.border}`,
+              background: filter === t.key ? "#FDF3E2" : "#fff",
+              color: c.ink,
+              fontFamily: bodyFont,
+              fontWeight: 600,
+              fontSize: 12,
+              cursor: "pointer",
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {messages === null && (
+        <div style={{ display: "flex", gap: 8, color: c.steel, fontSize: 13, padding: 12 }}>
+          <Spinner /> Загружаю обращения…
+        </div>
+      )}
+      {messages !== null && filtered.length === 0 && (
+        <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 20, color: c.steel, fontSize: 13.5, maxWidth: 700 }}>Обращений нет.</div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 700 }}>
+        {filtered.map((m) => (
+          <div key={m.id} style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+              <div>
+                <div style={{ fontFamily: bodyFont, fontWeight: 700, fontSize: 13.5, color: c.ink }}>{m.shop_name || "Магазин"}</div>
+                <div style={{ fontFamily: bodyFont, fontSize: 11.5, color: c.steel }}>
+                  {m.user_email} · {new Date(m.created_at).toLocaleString("ru-RU")}
+                </div>
+              </div>
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: statusColor[m.status] || c.steel, background: statusBg[m.status] || c.cloud, padding: "3px 8px", borderRadius: 4, flexShrink: 0 }}>
+                {statusLabel[m.status] || m.status}
+              </span>
+            </div>
+            {m.subject && <div style={{ fontFamily: bodyFont, fontWeight: 600, fontSize: 13, color: c.ink, marginBottom: 4 }}>{m.subject}</div>}
+            <div style={{ fontFamily: bodyFont, fontSize: 13, color: c.ink, marginBottom: 10, whiteSpace: "pre-wrap" }}>{m.message}</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {m.status !== "read" && (
+                <button onClick={() => setStatus(m, "read")} style={{ background: "transparent", border: `1px solid ${c.border}`, borderRadius: 6, padding: "6px 12px", fontFamily: bodyFont, fontSize: 11.5, fontWeight: 600, color: c.ink, cursor: "pointer" }}>
+                  Отметить прочитанным
+                </button>
+              )}
+              {m.status !== "resolved" && (
+                <button onClick={() => setStatus(m, "resolved")} style={{ background: c.greenBg, border: "none", borderRadius: 6, padding: "6px 12px", fontFamily: bodyFont, fontSize: 11.5, fontWeight: 600, color: c.green, cursor: "pointer" }}>
+                  Отметить решённым
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AdminPanelScreen({ session, onExit }) {
   const [shops, setShops] = useState(null);
   const [error, setError] = useState("");
@@ -5845,6 +5961,7 @@ function AdminPanelScreen({ session, onExit }) {
         {[
           { key: "shops", label: "Магазины" },
           { key: "ads", label: "Реклама" },
+          { key: "support", label: "Поддержка" },
         ].map((t) => (
           <button
             key={t.key}
@@ -5868,6 +5985,8 @@ function AdminPanelScreen({ session, onExit }) {
 
       {panelTab === "ads" ? (
         <AdBannersAdmin session={session} />
+      ) : panelTab === "support" ? (
+        <SupportAdmin session={session} />
       ) : openShop ? (
         <div style={{ maxWidth: 480 }}>
           <button onClick={() => setOpenId(null)} style={{ background: "none", border: "none", color: c.steel, fontFamily: bodyFont, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: 12 }}>
@@ -6087,6 +6206,118 @@ function AdminPanelScreen({ session, onExit }) {
                     {shopIsBlocked(s) ? "Заблокирован" : "Активен"}
                   </span>
                 </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---- Shown to shop owners: contact info + a way to message the admin ----
+function SupportScreen({ session, shop }) {
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [history, setHistory] = useState(null);
+
+  async function load() {
+    try {
+      const rows = await db("support_messages", { query: `?shop_id=eq.${shop.id}&order=created_at.desc`, session });
+      setHistory(rows);
+    } catch (e) {
+      // non-critical
+    }
+  }
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line
+  }, [shop.id]);
+
+  async function send() {
+    if (!message.trim()) return;
+    setSending(true);
+    setError("");
+    setNotice("");
+    try {
+      await db("support_messages", {
+        method: "POST",
+        body: { shop_id: shop.id, shop_name: shop.name, user_email: session.user.email, subject, message },
+        session,
+        prefer: "return=minimal",
+      });
+      setSubject("");
+      setMessage("");
+      setNotice("Сообщение отправлено — администратор ответит по указанным ниже контактам.");
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const statusLabel = { new: "Новое", read: "Прочитано", resolved: "Решено" };
+  const statusColor = { new: c.amberDark, read: c.steel, resolved: c.green };
+  const statusBg = { new: "#FDF3E2", read: c.cloud, resolved: c.greenBg };
+
+  return (
+    <div style={{ maxWidth: 560 }}>
+      <div style={{ fontFamily: displayFont, fontSize: 20, fontWeight: 600, color: c.ink, marginBottom: 4 }}>Поддержка</div>
+      <div style={{ fontFamily: bodyFont, fontSize: 13, color: c.steel, marginBottom: 20 }}>Вопрос по работе системы, сложность или предложение по улучшению — пишите, отвечаем по контактам ниже.</div>
+
+      <div style={{ background: c.cloud, borderRadius: 10, padding: 16, marginBottom: 20 }}>
+        <div style={{ fontFamily: bodyFont, fontSize: 11, fontWeight: 700, color: c.steel, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.03em" }}>Прямые контакты</div>
+        <a href={`tel:${PLATFORM_CONTACT.phone.replace(/\s/g, "")}`} style={{ display: "flex", alignItems: "center", gap: 8, color: c.ink, textDecoration: "none", fontFamily: monoFont, fontSize: 13.5, marginBottom: 8 }}>
+          📞 {PLATFORM_CONTACT.phone}
+        </a>
+        <a
+          href={`https://wa.me/${PLATFORM_CONTACT.whatsapp}`}
+          target="_blank"
+          rel="noreferrer"
+          style={{ display: "flex", alignItems: "center", gap: 8, color: c.green, textDecoration: "none", fontFamily: bodyFont, fontWeight: 600, fontSize: 13, marginBottom: 8 }}
+        >
+          💬 Написать в WhatsApp
+        </a>
+        <a href={`mailto:${PLATFORM_CONTACT.email}`} style={{ display: "flex", alignItems: "center", gap: 8, color: c.steel, textDecoration: "none", fontFamily: bodyFont, fontSize: 12.5 }}>
+          ✉ {PLATFORM_CONTACT.email}
+        </a>
+      </div>
+
+      <div style={{ fontFamily: displayFont, fontSize: 15, fontWeight: 600, color: c.ink, marginBottom: 10 }}>Или напишите прямо здесь</div>
+      <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, padding: 18, marginBottom: 24 }}>
+        {error && <div style={{ background: c.redBg, color: c.red, borderRadius: 8, padding: "8px 10px", fontSize: 12, marginBottom: 10 }}>{error}</div>}
+        {notice && <div style={{ background: c.greenBg, color: c.green, borderRadius: 8, padding: "8px 10px", fontSize: 12, marginBottom: 10 }}>{notice}</div>}
+        <div style={{ marginBottom: 10 }}>
+          <label style={fieldLabel}>Тема (необязательно)</label>
+          <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Например, «Вопрос по возврату»" style={inputStyle} />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={fieldLabel}>Сообщение</label>
+          <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={4} placeholder="Опишите вопрос, сложность или что можно улучшить…" style={{ ...inputStyle, resize: "vertical" }} />
+        </div>
+        <button onClick={send} disabled={sending || !message.trim()} style={{ ...primaryBtn, opacity: sending || !message.trim() ? 0.6 : 1 }}>
+          {sending ? <Spinner /> : "Отправить"}
+        </button>
+      </div>
+
+      {history && history.length > 0 && (
+        <>
+          <div style={{ fontFamily: displayFont, fontSize: 15, fontWeight: 600, color: c.ink, marginBottom: 10 }}>Ваши обращения</div>
+          <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, overflow: "hidden" }}>
+            {history.map((h, i) => (
+              <div key={h.id} style={{ padding: "12px 16px", borderTop: i === 0 ? "none" : `1px solid ${c.border}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                  <span style={{ fontFamily: bodyFont, fontWeight: 700, fontSize: 13, color: c.ink }}>{h.subject || "Без темы"}</span>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: statusColor[h.status] || c.steel, background: statusBg[h.status] || c.cloud, padding: "2px 8px", borderRadius: 4 }}>
+                    {statusLabel[h.status] || h.status}
+                  </span>
+                </div>
+                <div style={{ fontFamily: bodyFont, fontSize: 12.5, color: c.steel, marginBottom: 4 }}>{h.message}</div>
+                <div style={{ fontFamily: monoFont, fontSize: 11, color: c.steelLight }}>{new Date(h.created_at).toLocaleString("ru-RU")}</div>
               </div>
             ))}
           </div>
@@ -6360,6 +6591,7 @@ export default function App() {
           { key: "docs", label: "Документы", icon: FileText },
           { key: "contacts", label: "Контрагенты", icon: Users },
           { key: "settings", label: "Настройки", icon: Settings },
+          { key: "support", label: "Поддержка", icon: MessageCircle },
         ].map((n) => {
           const NavIcon = n.icon;
           const active = tab === n.key;
@@ -6433,6 +6665,7 @@ export default function App() {
         {tab === "reports" && <ReportsScreen session={session} shop={shop} />}
         {tab === "docs" && <DocumentsScreen session={session} shop={shop} />}
         {tab === "settings" && <SettingsScreen session={session} shop={shop} onShopUpdate={setShop} />}
+        {tab === "support" && <SupportScreen session={session} shop={shop} />}
       </main>
     </div>
   );
